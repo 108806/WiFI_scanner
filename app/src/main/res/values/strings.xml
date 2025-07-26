@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WiFi Scanner</string>
+    <string name="scan_wifi">Scan WiFi Networks</string>
+    <string name="export_json">Export to JSON</string>
+    <string name="clear_results">Clear Results</string>
+    <string name="permission_required">Location permission is required for WiFi scanning</string>
+    <string name="wifi_disabled">Please enable WiFi to scan for networks</string>
+    <string name="scan_success">Scan completed successfully</string>
+    <string name="scan_failed">WiFi scan failed</string>
+    <string name="export_success">Results exported successfully</string>
+    <string name="export_failed">Export failed</string>
+    <string name="no_results">No scan results to export</string>
+    <string name="location_unavailable">Location unavailable</string>
+    <string name="hidden_network">Hidden Network</string>
+</resources>

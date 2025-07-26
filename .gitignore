@@ -1,0 +1,85 @@
+gradle.properties
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Gradle build outputs
+/app/build/
+build/
+*/build/
+gradle-8.9/
+
+# Gradle wrapper JAR (keep properties)
+gradle/wrapper/gradle-wrapper.jar
+
+# ===== SECURITY & PRIVACY - CRITICAL =====
+# Private data folder for Galaxy A55 device (contains real WiFi scans, GPS coordinates, etc.)
+a55/
+
+# WiFi scan data - CONTAINS PRIVATE INFORMATION (BSSID, GPS, etc.)
+*.json
+wifi_*.json
+network_*.json
+scan_*.json
+database_*.json
+
+# GPS/Location data exports
+*location*.json
+*gps*.json
+*coordinates*.json
+
+# Device-specific exported files
+device_info*.json
+phone_*.json
+
+# Any exported scan results from app
+export_*.json
+results_*.json
+
+# Network database files (contains WiFi networks + GPS coordinates)
+network_database*.json
+wifi_database*.json
+wifi_scan*.json
+
+# Files pulled from device via ADB
+pulled_*
+adb_pull_*
+
+# APK files (may contain metadata)
+*.apk
+*.aab
+
+# Keystore files
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+
+# Logs that might contain sensitive data
+*.log
+logs/
+
+# Environment files
+.env
+.env.*
+
+# Backup files
+*.backup
+*.bak
+
+# Screenshots that might show sensitive network data
+screenshots/
+screen_*.png

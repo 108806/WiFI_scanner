@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary brand color -->
+    <color name="primary_color">#BB86FC</color>
+    <color name="primary_variant">#3700B3</color>
+    <color name="secondary_color">#03DAC6</color>
+    <color name="secondary_variant">#018786</color>
+    
+    <!-- Error and warning colors -->
+    <color name="error_color">#CF6679</color>
+    <color name="warning_color">#FF9800</color>
+    <color name="anomaly_high">#FF5722</color>
+    <color name="anomaly_medium">#FF9800</color>
+    <color name="anomaly_low">#FFC107</color>
+    
+    <!-- Dark theme colors -->
+    <color name="background_primary">#121212</color>
+    <color name="background_secondary">#1E1E1E</color>
+    <color name="background_card">#2D2D2D</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B3B3B3</color>
+    <color name="text_hint">#666666</color>
+    
+    <!-- Signal strength colors -->
+    <color name="signal_excellent">#4CAF50</color>
+    <color name="signal_good">#8BC34A</color>
+    <color name="signal_fair">#FFEB3B</color>
+    <color name="signal_poor">#FF9800</color>
+    <color name="signal_very_poor">#F44336</color>
+    
+    <!-- Security colors -->
+    <color name="security_secure">#4CAF50</color>
+    <color name="security_weak">#FF9800</color>
+    <color name="security_open">#F44336</color>
+    <color name="security_background">#555555</color>
+    
+    <!-- Anomaly colors -->
+    <color name="anomaly_critical">#FF5252</color>
+    <color name="anomaly_warning">#FFC107</color>
+    <color name="anomaly_info">#2196F3</color>
+    <color name="anomaly_background">#3C1A1A</color>
+    
+    <!-- Material Design colors -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

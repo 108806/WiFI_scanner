@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="4dp"
+    app:cardBackgroundColor="@color/background_secondary">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header with SSID and Security -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_ssid"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Network Name"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/tv_security"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WPA2"
+                android:textSize="12sp"
+                android:textColor="@color/white"
+                android:background="@color/security_background"
+                android:padding="4dp"
+                android:layout_marginStart="8dp"
+                android:minWidth="48dp"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+        <!-- BSSID -->
+        <TextView
+            android:id="@+id/tv_bssid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="BSSID: 00:00:00:00:00:00"
+            android:textSize="14sp"
+            android:textColor="@color/text_secondary"
+            android:layout_marginTop="4dp"
+            android:fontFamily="monospace" />
+
+        <!-- Signal and Frequency Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/tv_signal_level"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="-50 dBm (90%)"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary" />
+
+            <TextView
+                android:id="@+id/tv_frequency"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="2412 MHz (2.4 GHz)"
+                android:textSize="14sp"
+                android:gravity="end"
+                android:textColor="@color/text_secondary" />
+
+        </LinearLayout>
+
+        <!-- Location -->
+        <TextView
+            android:id="@+id/tv_location"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Location: Lat: 0.000000, Lon: 0.000000"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary"
+            android:layout_marginTop="4dp"
+            android:fontFamily="monospace" />
+
+        <!-- Timestamp -->
+        <TextView
+            android:id="@+id/tv_timestamp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Scanned: 12:34:56"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary"
+            android:gravity="end"
+            android:layout_marginTop="4dp" />
+
+        <!-- Anomaly Indicator -->
+        <TextView
+            android:id="@+id/tv_anomaly"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚠️ Security Anomaly Detected"
+            android:textSize="14sp"
+            android:textColor="@color/anomaly_critical"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp"
+            android:padding="8dp"
+            android:background="@color/anomaly_background"
+            android:visibility="gone"
+            android:gravity="center" />
+
+    </LinearLayout>
+
+</androidx.cardview.widget.CardView>
