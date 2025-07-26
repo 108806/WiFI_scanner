@@ -20,6 +20,7 @@ local.properties
 build/
 */build/
 gradle-8.9/
+gradle-8.9-bin.zip
 
 # Gradle wrapper JAR (keep properties)
 gradle/wrapper/gradle-wrapper.jar
