@@ -1,4 +1,4 @@
-package com.wlanscanner
+package com.wlanscanner.data
 
 data class WifiNetwork(
     val ssid: String,
@@ -7,10 +7,10 @@ data class WifiNetwork(
     val frequency: Int,
     val level: Int, // Signal strength in dBm
     val timestamp: Long,
-    val latitude: Double? = null,
-    val longitude: Double? = null,
-    val altitude: Double? = null,
-    val accuracy: Double? = null
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val altitude: Double = 0.0,
+    val accuracy: Float = 0.0f
 ) {
     // Convert signal level to quality percentage
     fun getSignalQuality(): Int {
@@ -50,10 +50,6 @@ data class WifiNetwork(
     
     // Get formatted location string
     fun getLocationString(): String {
-        return if (latitude != null && longitude != null) {
-            "Lat: %.6f, Lon: %.6f".format(latitude, longitude)
-        } else {
-            "Location unavailable"
-        }
+        return "Lat: %.6f, Lon: %.6f".format(latitude, longitude)
     }
 }

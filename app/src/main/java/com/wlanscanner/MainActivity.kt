@@ -6,398 +6,438 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.location.Location
 import android.location.LocationManager
-import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
-import android.widget.Toast
+import android.view.LayoutInflater
+import android.view.View
+import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.google.android.gms.location.*
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import com.wlanscanner.databinding.ActivityMainBinding
-import java.io.File
-import java.io.FileWriter
-import java.text.SimpleDateFormat
-import java.util.*
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.wlanscanner.data.NetworkDatabase
+import com.wlanscanner.data.WifiNetwork
 
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var bottomNav: BottomNavigationView
+    private lateinit var scanButton: Button
+    private lateinit var contentFrame: FrameLayout
+    private lateinit var contentText: TextView
     
-    private lateinit var binding: ActivityMainBinding
     private lateinit var wifiManager: WifiManager
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var adapter: WifiNetworkAdapter
-    private lateinit var viewModel: WifiScanViewModel
+    private lateinit var locationManager: LocationManager
     private lateinit var networkDatabase: NetworkDatabase
     
-    private var currentLocation: Location? = null
-    private val gson = Gson()
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    private var isScanning = false
+    private var currentTab = "scan"
     
-    companion object {
-        private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
-        private const val WIFI_PERMISSION_REQUEST_CODE = 1002
-        private const val TAG = "WifiScanner"
+    // Database view components
+    private var databaseView: View? = null
+    private var detailedNetworkAdapter: DetailedNetworkAdapter? = null
+    private var allNetworks = mutableListOf<NetworkDatabase.NetworkEntry>()
+    private var filteredNetworks = mutableListOf<NetworkDatabase.NetworkEntry>()
+    
+    // Scan view components
+    private var scanView: View? = null
+    private var scanResultAdapter: ScanResultAdapter? = null
+    private var currentScanResults = mutableListOf<WifiNetwork>()
+
+    // Permission request launcher
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (!allGranted) {
+            Toast.makeText(this, "Permissions required for WiFi scanning", Toast.LENGTH_LONG).show()
+        }
     }
-    
+
+    // WiFi scan receiver
     private val wifiScanReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            Log.d("MainActivity", "WiFi scan receiver triggered")
             val success = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false)
+            Log.d("MainActivity", "Scan results updated: $success")
             if (success) {
-                scanSuccess()
+                processScanResults()
             } else {
-                scanFailure()
+                Log.d("MainActivity", "Scan failed or no results updated")
             }
         }
     }
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_main_simple)
         
         initializeComponents()
-        setupRecyclerView()
-        setupClickListeners()
-        requestPermissions()
+        setupBottomNavigation()
+        requestRequiredPermissions()
+        
+        // Show scan tab by default
+        showScanTab()
     }
-    
+
     private fun initializeComponents() {
-        wifiManager = getSystemService(Context.WIFI_SERVICE) as WifiManager
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        viewModel = ViewModelProvider(this)[WifiScanViewModel::class.java]
-        networkDatabase = NetworkDatabase(this)
+        bottomNav = findViewById(R.id.nav_view)
+        scanButton = findViewById(R.id.scanButton)
+        contentFrame = findViewById(R.id.contentFrame)
+        contentText = findViewById(R.id.contentText)
         
-        // Observe scan results
-        viewModel.scanResults.observe(this) { results ->
-            adapter.updateResults(results)
-            binding.tvScanCount.text = "Networks found: ${results.size}"
-            
-            // Update database with new networks and detect anomalies
-            results.forEach { network ->
-                val anomalies = networkDatabase.addOrUpdateNetwork(network)
-                if (anomalies.isNotEmpty()) {
-                    Log.d(TAG, "Anomalies detected for ${network.ssid}: ${anomalies.size}")
-                }
-            }
-            
-            // Show statistics
-            val stats = networkDatabase.getNetworkStats()
-            val statsText = "Networks: ${stats["totalNetworks"]}, " +
-                    "Anomalies: ${stats["totalAnomalies"]}, " +
-                    "Critical: ${stats["criticalAnomalies"]}"
-            Log.d(TAG, "Database stats: $statsText")
-        }
+        wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        networkDatabase = NetworkDatabase.getInstance(this)
         
-        // Observe scan status
-        viewModel.isScanning.observe(this) { isScanning ->
-            binding.btnScan.text = if (isScanning) "Scanning..." else "Start Scan"
-            binding.btnScan.isEnabled = !isScanning
-            binding.progressBar.visibility = if (isScanning) 
-                android.view.View.VISIBLE else android.view.View.GONE
-        }
-    }
-    
-    private fun setupRecyclerView() {
-        adapter = WifiNetworkAdapter()
-        binding.recyclerView.layoutManager = LinearLayoutManager(this)
-        binding.recyclerView.adapter = adapter
-    }
-    
-    private fun setupClickListeners() {
-        binding.btnScan.setOnClickListener {
-            if (hasRequiredPermissions()) {
-                getCurrentLocationAndScan()
+        scanButton.setOnClickListener {
+            if (isScanning) {
+                stopScan()
             } else {
-                requestPermissions()
+                startScan()
             }
         }
-        
-        binding.btnExport.setOnClickListener {
-            exportToJson()
-        }
-        
-        binding.btnClear.setOnClickListener {
-            viewModel.clearResults()
-            networkDatabase.clearDatabase()
-            Toast.makeText(this, "Scan results and database cleared", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun setupBottomNavigation() {
+        bottomNav.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.navigation_scan -> {
+                    currentTab = "scan"
+                    showScanTab()
+                    true
+                }
+                R.id.navigation_database -> {
+                    currentTab = "database"
+                    showDatabaseTab()
+                    true
+                }
+                R.id.navigation_map -> {
+                    currentTab = "map"
+                    showMapTab()
+                    true
+                }
+                else -> false
+            }
         }
     }
-    
-    private fun hasRequiredPermissions(): Boolean {
-        val locationPermission = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
+
+    private fun showScanTab() {
+        Log.d("MainActivity", "showScanTab() called, currentScanResults.size: ${currentScanResults.size}")
         
-        val wifiPermission = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_WIFI_STATE
-        ) == PackageManager.PERMISSION_GRANTED
+        if (scanView == null) {
+            scanView = LayoutInflater.from(this).inflate(R.layout.scan_content, contentFrame, false)
+            setupScanView()
+        }
         
-        return locationPermission && wifiPermission
+        contentFrame.removeAllViews()
+        contentFrame.addView(scanView)
+        
+        scanButton.visibility = View.VISIBLE
+        updateScanButtonText()
+        updateScanStatus()
+        
+        // Refresh scan results display when switching to scan tab
+        if (scanResultAdapter != null) {
+            Log.d("MainActivity", "Refreshing adapter with ${currentScanResults.size} networks")
+            scanResultAdapter?.updateResults(currentScanResults)
+        }
     }
-    
-    private fun requestPermissions() {
-        // First, request basic location permissions (essential for WiFi scanning)
-        val basicPermissions = mutableListOf<String>()
-        
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
-            != PackageManager.PERMISSION_GRANTED) {
-            basicPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-        
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) 
-            != PackageManager.PERMISSION_GRANTED) {
-            basicPermissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
-        }
-        
-        if (basicPermissions.isNotEmpty()) {
-            // Show explanation before requesting permissions
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Location Permission Required")
-                .setMessage("This app needs location access to scan for WiFi networks. This is required by Android for WiFi scanning.")
-                .setPositiveButton("Grant Permission") { _, _ ->
-                    ActivityCompat.requestPermissions(
-                        this, 
-                        basicPermissions.toTypedArray(), 
-                        LOCATION_PERMISSION_REQUEST_CODE
-                    )
-                }
-                .setNegativeButton("Cancel") { _, _ ->
-                    Toast.makeText(this, "Location permission is required for WiFi scanning", Toast.LENGTH_LONG).show()
-                }
-                .show()
+
+    private fun setupScanView() {
+        val recyclerView = scanView?.findViewById<RecyclerView>(R.id.scanResultsRecyclerView)
+        if (scanResultAdapter == null) {
+            Log.d("MainActivity", "Creating new ScanResultAdapter with empty list")
+            scanResultAdapter = ScanResultAdapter(mutableListOf()) // Create with empty list, not shared reference
+            recyclerView?.layoutManager = LinearLayoutManager(this)
+            recyclerView?.adapter = scanResultAdapter
         } else {
-            // Basic permissions granted, check for background location (optional)
-            requestBackgroundLocationIfNeeded()
+            Log.d("MainActivity", "ScanResultAdapter already exists, reusing")
         }
+        
+        Log.d("MainActivity", "ScanView setup completed. Current results count: ${currentScanResults.size}")
     }
-    
-    private fun requestBackgroundLocationIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) 
-                != PackageManager.PERMISSION_GRANTED) {
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Background Location (Optional)")
-                    .setMessage("For continuous scanning in background, grant background location access in the next dialog.")
-                    .setPositiveButton("Continue") { _, _ ->
-                        ActivityCompat.requestPermissions(
-                            this, 
-                            arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), 
-                            LOCATION_PERMISSION_REQUEST_CODE + 1
-                        )
-                    }
-                    .setNegativeButton("Skip") { _, _ ->
-                        Toast.makeText(this, "Background scanning not available", Toast.LENGTH_SHORT).show()
-                    }
-                    .show()
+
+    private fun updateScanStatus() {
+        val statusText = scanView?.findViewById<TextView>(R.id.scanStatusText)
+        
+        // Hide status text if we have scan results, show detailed list instead
+        if (currentScanResults.isNotEmpty() && !isScanning) {
+            statusText?.visibility = View.GONE
+            Log.d("MainActivity", "Hiding status text, showing ${currentScanResults.size} networks in list")
+        } else {
+            statusText?.visibility = View.VISIBLE
+            val message = if (isScanning) {
+                "Scanning for WiFi networks..."
+            } else {
+                "Ready to scan - Tap 'Start Scan' to begin"
             }
+            statusText?.text = message
+            Log.d("MainActivity", "Showing status: $message")
+        }
+        
+        // Debug log
+        Log.d("MainActivity", "currentScanResults.size: ${currentScanResults.size}, adapter item count: ${scanResultAdapter?.itemCount}")
+    }
+
+    private fun showDatabaseTab() {
+        scanButton.visibility = View.GONE
+        
+        if (databaseView == null) {
+            databaseView = LayoutInflater.from(this).inflate(R.layout.database_content, contentFrame, false)
+            setupDatabaseView()
+        }
+        
+        contentFrame.removeAllViews()
+        contentFrame.addView(databaseView)
+        
+        refreshDatabaseView()
+    }
+
+    private fun setupDatabaseView() {
+        val searchEdit = databaseView?.findViewById<EditText>(R.id.searchEdit)
+        val recyclerView = databaseView?.findViewById<RecyclerView>(R.id.networksRecyclerView)
+        val exportButton = databaseView?.findViewById<Button>(R.id.exportButton)
+        val clearButton = databaseView?.findViewById<Button>(R.id.clearButton)
+        
+        detailedNetworkAdapter = DetailedNetworkAdapter(filteredNetworks)
+        recyclerView?.layoutManager = LinearLayoutManager(this)
+        recyclerView?.adapter = detailedNetworkAdapter
+        
+        searchEdit?.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                filterNetworks(s.toString())
+            }
+        })
+        
+        exportButton?.setOnClickListener {
+            exportDatabase()
+        }
+        
+        clearButton?.setOnClickListener {
+            clearDatabase()
         }
     }
+
+    private fun showMapTab() {
+        scanButton.visibility = View.GONE
+        contentFrame.removeAllViews()
+        contentFrame.addView(contentText)
+        contentText.text = "MAP Tab\nComing Soon..."
+    }
+
+    private fun refreshDatabaseView() {
+        allNetworks.clear()
+        allNetworks.addAll(networkDatabase.getAllNetworkEntries())
+        filterNetworks("")
+        
+        val statsText = databaseView?.findViewById<TextView>(R.id.statsText)
+        val stats = networkDatabase.getNetworkStats()
+        statsText?.text = "Networks: ${stats["totalNetworks"]} | Total Scans: ${allNetworks.sumOf { it.scanCount }}"
+    }
+
+    private fun filterNetworks(query: String) {
+        filteredNetworks.clear()
+        
+        if (query.isEmpty()) {
+            filteredNetworks.addAll(allNetworks)
+        } else {
+            val searchQuery = query.lowercase()
+            filteredNetworks.addAll(allNetworks.filter { network ->
+                network.ssid.lowercase().contains(searchQuery) ||
+                network.bssid.lowercase().contains(searchQuery)
+            })
+        }
+        
+        detailedNetworkAdapter?.notifyDataSetChanged()
+    }
     
-    private fun getCurrentLocationAndScan() {
-        if (ActivityCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions()
+    private fun exportDatabase() {
+        try {
+            val fileName = networkDatabase.exportToDownloads()
+            Toast.makeText(this, "Exported to Downloads/$fileName\nUse: adb pull /storage/emulated/0/Download/$fileName", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun clearDatabase() {
+        try {
+            networkDatabase.clearAllNetworks()
+            currentScanResults.clear()
+            refreshDatabaseView()
+            if (currentTab == "scan") {
+                scanResultAdapter?.updateResults(currentScanResults)
+                updateScanStatus()
+            }
+            Toast.makeText(this, "Database cleared successfully", Toast.LENGTH_SHORT).show()
+            Log.d("MainActivity", "Database cleared by user")
+        } catch (e: Exception) {
+            Toast.makeText(this, "Clear failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun startScan() {
+        Log.d("MainActivity", "startScan() called")
+        
+        if (!hasLocationPermission() || !hasWifiPermissions()) {
+            Log.d("MainActivity", "Missing permissions - Location: ${hasLocationPermission()}, WiFi: ${hasWifiPermissions()}")
+            requestRequiredPermissions()
             return
         }
         
-        fusedLocationClient.lastLocation
-            .addOnSuccessListener { location: Location? ->
-                currentLocation = location
-                startWifiScan()
-            }
-            .addOnFailureListener {
-                Log.e(TAG, "Failed to get location", it)
-                // Continue with scan without location
-                startWifiScan()
-            }
-    }
-    
-    private fun startWifiScan() {
+        // Check if WiFi is enabled
         if (!wifiManager.isWifiEnabled) {
-            Toast.makeText(this, "Please enable WiFi to scan", Toast.LENGTH_LONG).show()
+            Log.d("MainActivity", "WiFi is disabled")
+            Toast.makeText(this, "Please enable WiFi to scan for networks", Toast.LENGTH_LONG).show()
             return
         }
         
-        viewModel.startScanning()
+        isScanning = true
+        updateScanButtonText()
         
-        val intentFilter = IntentFilter()
-        intentFilter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-        registerReceiver(wifiScanReceiver, intentFilter)
+        // Register receiver
+        registerReceiver(wifiScanReceiver, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
         
-        val success = wifiManager.startScan()
-        if (!success) {
-            scanFailure()
+        // Start scan
+        val scanStarted = wifiManager.startScan()
+        Log.d("MainActivity", "Scan started: $scanStarted")
+        
+        if (currentTab == "scan") {
+            updateScanStatus()
         }
-    }
-    
-    private fun scanSuccess() {
-        val results = wifiManager.scanResults
-        val wifiNetworks = mutableListOf<WifiNetwork>()
         
-        for (scanResult in results) {
-            val network = WifiNetwork(
-                ssid = scanResult.SSID,
+        Toast.makeText(this, "WiFi scan started", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopScan() {
+        isScanning = false
+        updateScanButtonText()
+        
+        try {
+            unregisterReceiver(wifiScanReceiver)
+        } catch (e: Exception) {
+            // Receiver was not registered
+        }
+        
+        if (currentTab == "scan") {
+            updateScanStatus()
+        }
+        
+        Toast.makeText(this, "WiFi scan stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateScanButtonText() {
+        scanButton.text = if (isScanning) "Stop Scan" else "Start Scan"
+    }
+
+    private fun processScanResults() {
+        Log.d("MainActivity", "processScanResults() called")
+        
+        if (!hasWifiPermissions() || !hasLocationPermission()) {
+            Log.d("MainActivity", "Missing permissions in processScanResults")
+            return
+        }
+        
+        val scanResults = wifiManager.scanResults
+        Log.d("MainActivity", "Raw scan results count: ${scanResults.size}")
+        
+        val location = getCurrentLocation()
+        
+        // Clear and update current scan results for live display
+        currentScanResults.clear()
+        Log.d("MainActivity", "currentScanResults cleared, size now: ${currentScanResults.size}")
+        
+        scanResults.forEach { scanResult ->
+            Log.d("MainActivity", "Processing network: SSID='${scanResult.SSID}', BSSID='${scanResult.BSSID}', Level=${scanResult.level}")
+            
+            val wifiNetwork = WifiNetwork(
+                ssid = scanResult.SSID ?: "[Hidden Network]",
                 bssid = scanResult.BSSID,
                 capabilities = scanResult.capabilities,
                 frequency = scanResult.frequency,
                 level = scanResult.level,
                 timestamp = System.currentTimeMillis(),
-                latitude = currentLocation?.latitude,
-                longitude = currentLocation?.longitude,
-                altitude = currentLocation?.altitude,
-                accuracy = currentLocation?.accuracy?.toDouble()
-            )
-            wifiNetworks.add(network)
-        }
-        
-        viewModel.addScanResults(wifiNetworks)
-        viewModel.stopScanning()
-        
-        try {
-            unregisterReceiver(wifiScanReceiver)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error unregistering receiver", e)
-        }
-        
-        Toast.makeText(this, "Scan completed: ${wifiNetworks.size} networks found", 
-            Toast.LENGTH_SHORT).show()
-    }
-    
-    private fun scanFailure() {
-        viewModel.stopScanning()
-        try {
-            unregisterReceiver(wifiScanReceiver)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error unregistering receiver", e)
-        }
-        Toast.makeText(this, "Scan failed", Toast.LENGTH_SHORT).show()
-    }
-    
-    private fun exportToJson() {
-        val results = viewModel.scanResults.value ?: emptyList()
-        if (results.isEmpty()) {
-            Toast.makeText(this, "No scan results to export", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        try {
-            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            
-            // Export current scan results
-            val scanFileName = "wifi_scan_$timestamp.json"
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val scanFile = File(downloadsDir, scanFileName)
-            
-            // Create a map grouped by BSSID for easier lookup
-            val networksMap = mutableMapOf<String, MutableList<WifiNetwork>>()
-            results.forEach { network ->
-                val bssid = network.bssid
-                if (networksMap.containsKey(bssid)) {
-                    networksMap[bssid]?.add(network)
-                } else {
-                    networksMap[bssid] = mutableListOf(network)
-                }
-            }
-            
-            val stats = networkDatabase.getNetworkStats()
-            val scanJsonData = mapOf(
-                "scan_info" to mapOf(
-                    "total_scans" to results.size,
-                    "unique_networks" to networksMap.size,
-                    "export_timestamp" to dateFormat.format(Date()),
-                    "device_info" to mapOf(
-                        "model" to Build.MODEL,
-                        "manufacturer" to Build.MANUFACTURER,
-                        "android_version" to Build.VERSION.RELEASE
-                    ),
-                    "database_stats" to stats
-                ),
-                "networks" to networksMap
+                latitude = location?.first ?: 0.0,
+                longitude = location?.second ?: 0.0
             )
             
-            FileWriter(scanFile).use { writer ->
-                gson.toJson(scanJsonData, writer)
-            }
-            
-            // Export full database with anomaly history
-            val dbFileName = "wifi_database_$timestamp.json"
-            val dbFile = File(downloadsDir, dbFileName)
-            val databaseJson = networkDatabase.exportToJson()
-            dbFile.writeText(databaseJson)
-            
-            Toast.makeText(this, "Exported:\n- Scan: ${scanFile.name}\n- Database: ${dbFile.name}", Toast.LENGTH_LONG).show()
-            Log.i(TAG, "WiFi scan results exported to: ${scanFile.absolutePath}")
-            Log.i(TAG, "WiFi database exported to: ${dbFile.absolutePath}")
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to export results", e)
-            Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+            currentScanResults.add(wifiNetwork)
+            Log.d("MainActivity", "Added to currentScanResults, new size: ${currentScanResults.size}")
+            networkDatabase.addOrUpdateNetwork(wifiNetwork)
         }
-    }
-    
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         
-        when (requestCode) {
-            LOCATION_PERMISSION_REQUEST_CODE -> {
-                if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                    Toast.makeText(this, "Location permissions granted! You can now scan for WiFi networks.", Toast.LENGTH_SHORT).show()
-                    // Optionally ask for background location
-                    requestBackgroundLocationIfNeeded()
-                } else {
-                    // Check which permissions were denied
-                    val deniedPermissions = permissions.filterIndexed { index, _ -> 
-                        grantResults[index] != PackageManager.PERMISSION_GRANTED 
-                    }
-                    
-                    if (deniedPermissions.any { it == Manifest.permission.ACCESS_FINE_LOCATION || it == Manifest.permission.ACCESS_COARSE_LOCATION }) {
-                        // Show dialog explaining why permission is needed
-                        androidx.appcompat.app.AlertDialog.Builder(this)
-                            .setTitle("Permission Required")
-                            .setMessage("Location permission is required for WiFi scanning on Android. Please grant it in Settings > Apps > WiFi Scanner > Permissions")
-                            .setPositiveButton("Open Settings") { _, _ ->
-                                val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                                intent.data = android.net.Uri.fromParts("package", packageName, null)
-                                startActivity(intent)
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }
-                }
-            }
-            LOCATION_PERMISSION_REQUEST_CODE + 1 -> {
-                // Background location permission result
-                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    Toast.makeText(this, "Background location granted", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Background scanning not available", Toast.LENGTH_SHORT).show()
-                }
-            }
+        Log.d("MainActivity", "Final currentScanResults size: ${currentScanResults.size}")
+        
+        // Update live scan results display
+        if (currentTab == "scan") {
+            Log.d("MainActivity", "Updating scan results adapter with ${currentScanResults.size} networks")
+            scanResultAdapter?.updateResults(currentScanResults)
+            updateScanStatus()
+        }
+        
+        // If database tab is visible, refresh it
+        if (currentTab == "database") {
+            refreshDatabaseView()
         }
     }
-    
+
+    private fun getCurrentLocation(): Pair<Double, Double>? {
+        // Simple mock location for now
+        // In production, you'd use LocationManager or FusedLocationProvider
+        return Pair(52.2297, 21.0122) // Warsaw coordinates as example
+    }
+
+    private fun requestRequiredPermissions() {
+        val requiredPermissions = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_WIFI_STATE,
+            Manifest.permission.CHANGE_WIFI_STATE
+        )
+
+        val permissionsToRequest = requiredPermissions.filter { permission ->
+            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasWifiPermissions(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_WIFI_STATE
+        ) == PackageManager.PERMISSION_GRANTED &&
+        ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CHANGE_WIFI_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            unregisterReceiver(wifiScanReceiver)
-        } catch (e: Exception) {
-            // Receiver was not registered
+        if (isScanning) {
+            try {
+                unregisterReceiver(wifiScanReceiver)
+            } catch (e: Exception) {
+                // Receiver was not registered
+            }
         }
     }
 }

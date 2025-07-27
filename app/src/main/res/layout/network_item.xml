@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="16dp"
+    android:paddingRight="16dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    android:background="@color/background_dark">
+
+    <!-- Main network info row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/ssidText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Network SSID"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/signalText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="-50 dBm"
+            android:textColor="@color/accent_color"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:layout_marginStart="8dp" />
+
+        <TextView
+            android:id="@+id/frequencyText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2.4GHz"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:layout_marginStart="8dp" />
+
+    </LinearLayout>
+
+    <!-- BSSID and Security row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="4dp">
+
+        <TextView
+            android:id="@+id/bssidText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="00:11:22:33:44:55"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:fontFamily="monospace" />
+
+        <TextView
+            android:id="@+id/securityText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WPA2"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:layout_marginStart="8dp" />
+
+        <TextView
+            android:id="@+id/anomaliesText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2 issues"
+            android:textColor="@android:color/holo_orange_light"
+            android:textSize="11sp"
+            android:layout_marginStart="8dp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- Thin divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="@color/text_hint"
+        android:layout_marginTop="8dp"
+        android:alpha="0.3" />
+
+</LinearLayout>
