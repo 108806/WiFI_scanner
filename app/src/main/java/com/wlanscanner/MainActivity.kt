@@ -24,18 +24,15 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.GoogleMap
-import com.google.android.gms.maps.OnMapReadyCallback
-import com.google.android.gms.maps.SupportMapFragment
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.LatLngBounds
-import com.google.android.gms.maps.model.MarkerOptions
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
 import com.wlanscanner.data.NetworkDatabase
 import com.wlanscanner.data.WifiNetwork
 
-class MainActivity : AppCompatActivity(), OnMapReadyCallback {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var bottomNav: BottomNavigationView
     private lateinit var scanButton: Button
@@ -71,8 +68,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Map view components
     private var mapView: View? = null
-    private var googleMap: GoogleMap? = null
-    private var mapFragment: SupportMapFragment? = null
+    private var osmMapView: MapView? = null
 
     // Permission request launcher
     private val requestPermissionLauncher = registerForActivityResult(
@@ -101,6 +97,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main_simple)
+        
+        // Initialize osmdroid configuration
+        Configuration.getInstance().load(applicationContext, android.preference.PreferenceManager.getDefaultSharedPreferences(applicationContext))
         
         initializeComponents()
         setupBottomNavigation()
@@ -313,10 +312,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         
         contentFrame.addView(mapView)
         
-        // Initialize map if not already done
-        if (mapFragment == null) {
-            mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as? SupportMapFragment
-            mapFragment?.getMapAsync(this)
+        // Initialize OSM map if not already done
+        if (osmMapView == null) {
+            osmMapView = mapView?.findViewById<MapView>(R.id.osmMapView)
+            setupOsmMap()
         }
         
         refreshMapView()
@@ -335,20 +334,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    override fun onMapReady(map: GoogleMap) {
-        googleMap = map
-        
-        // Configure map settings
-        googleMap?.apply {
-            uiSettings.isZoomControlsEnabled = true
-            uiSettings.isCompassEnabled = true
-            uiSettings.isMyLocationButtonEnabled = true
+    private fun setupOsmMap() {
+        osmMapView?.apply {
+            setTileSource(TileSourceFactory.MAPNIK)
+            setBuiltInZoomControls(true)
+            setMultiTouchControls(true)
             
-            // Try to enable My Location layer if permission is granted
-            if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION) 
-                == PackageManager.PERMISSION_GRANTED) {
-                isMyLocationEnabled = true
-            }
+            // Set default view to Warsaw, Poland
+            val mapController = controller
+            mapController.setZoom(12.0)
+            val startPoint = GeoPoint(52.2297, 21.0122) // Warsaw coordinates
+            mapController.setCenter(startPoint)
         }
         
         // Load networks on map
@@ -361,9 +357,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun loadNetworksOnMap() {
-        googleMap?.let { map ->
+        osmMapView?.let { map ->
             // Clear existing markers
-            map.clear()
+            map.overlays.clear()
             
             val networkEntries = networkDatabase.getAllNetworkEntries()
             var networksWithLocation = 0
@@ -371,59 +367,76 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             networkEntries.forEach { entry ->
                 val lastLocation = entry.locations.lastOrNull()
                 if (lastLocation != null && lastLocation.latitude != 0.0 && lastLocation.longitude != 0.0) {
-                    val position = LatLng(lastLocation.latitude, lastLocation.longitude)
-                    
-                    // Determine marker color based on signal strength
-                    val latestSignal = entry.signalHistory.maxByOrNull { it.level }?.level ?: -100
-                    val markerColor = when {
-                        latestSignal > -50 -> BitmapDescriptorFactory.HUE_GREEN   // Strong signal
-                        latestSignal > -70 -> BitmapDescriptorFactory.HUE_YELLOW  // Medium signal  
-                        else -> BitmapDescriptorFactory.HUE_RED                   // Weak signal
-                    }
+                    val position = GeoPoint(lastLocation.latitude, lastLocation.longitude)
                     
                     // Create marker with network info
+                    val marker = Marker(map)
+                    marker.position = position
+                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    
                     val markerTitle = if (entry.ssid.isEmpty()) "Hidden Network" else entry.ssid
-                    val markerSnippet = "Signal: ${latestSignal}dBm | Scans: ${entry.scanCount} | ${entry.address ?: "No address"}"
+                    val latestSignal = entry.signalHistory.maxByOrNull { it.level }?.level ?: -100
+                    marker.title = markerTitle
+                    marker.snippet = "Signal: ${latestSignal}dBm | Scans: ${entry.scanCount} | ${entry.address ?: "No address"}"
                     
-                    map.addMarker(
-                        MarkerOptions()
-                            .position(position)
-                            .title(markerTitle)
-                            .snippet(markerSnippet)
-                            .icon(BitmapDescriptorFactory.defaultMarker(markerColor))
-                    )
+                    // Set marker icon based on signal strength
+                    when {
+                        latestSignal > -50 -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_online)
+                        latestSignal > -70 -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_away)
+                        else -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_busy)
+                    }
                     
+                    map.overlays.add(marker)
                     networksWithLocation++
                 }
             }
             
+            map.invalidate() // Refresh the map
             Log.d("MainActivity", "Loaded $networksWithLocation networks with GPS coordinates on map")
         }
     }
 
     private fun centerMapOnNetworks() {
-        googleMap?.let { map ->
+        osmMapView?.let { map ->
             val networkEntries = networkDatabase.getAllNetworkEntries()
-            val locations = mutableListOf<LatLng>()
+            val locations = mutableListOf<GeoPoint>()
             
             networkEntries.forEach { entry ->
                 val lastLocation = entry.locations.lastOrNull()
                 if (lastLocation != null && lastLocation.latitude != 0.0 && lastLocation.longitude != 0.0) {
-                    locations.add(LatLng(lastLocation.latitude, lastLocation.longitude))
+                    locations.add(GeoPoint(lastLocation.latitude, lastLocation.longitude))
                 }
             }
             
             if (locations.isNotEmpty()) {
                 if (locations.size == 1) {
                     // Single location - center and zoom
-                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(locations[0], 15f))
+                    map.controller.animateTo(locations[0])
+                    map.controller.setZoom(15.0)
                 } else {
-                    // Multiple locations - fit all in view
-                    val boundsBuilder = LatLngBounds.Builder()
-                    locations.forEach { boundsBuilder.include(it) }
-                    val bounds = boundsBuilder.build()
-                    val padding = 100 // padding in pixels
-                    map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, padding))
+                    // Multiple locations - calculate bounds and fit all in view
+                    val minLat = locations.minOfOrNull { it.latitude } ?: 0.0
+                    val maxLat = locations.maxOfOrNull { it.latitude } ?: 0.0
+                    val minLon = locations.minOfOrNull { it.longitude } ?: 0.0
+                    val maxLon = locations.maxOfOrNull { it.longitude } ?: 0.0
+                    
+                    val centerLat = (minLat + maxLat) / 2
+                    val centerLon = (minLon + maxLon) / 2
+                    val centerPoint = GeoPoint(centerLat, centerLon)
+                    
+                    // Calculate appropriate zoom level
+                    val latDiff = maxLat - minLat
+                    val lonDiff = maxLon - minLon
+                    val maxDiff = maxOf(latDiff, lonDiff)
+                    val zoomLevel = when {
+                        maxDiff > 1.0 -> 8.0
+                        maxDiff > 0.1 -> 11.0
+                        maxDiff > 0.01 -> 13.0
+                        else -> 15.0
+                    }
+                    
+                    map.controller.animateTo(centerPoint)
+                    map.controller.setZoom(zoomLevel)
                 }
             } else {
                 Toast.makeText(this, "No networks with GPS coordinates found", Toast.LENGTH_SHORT).show()
@@ -851,6 +864,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             .setView(dialogView)
             .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
             .show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        osmMapView?.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        osmMapView?.onPause()
     }
 
     override fun onDestroy() {
