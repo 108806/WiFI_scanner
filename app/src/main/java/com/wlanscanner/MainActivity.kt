@@ -52,6 +52,10 @@ class MainActivity : AppCompatActivity() {
     private var allNetworks = mutableListOf<NetworkDatabase.NetworkEntry>()
     private var filteredNetworks = mutableListOf<NetworkDatabase.NetworkEntry>()
     
+    // Sorting state
+    private enum class SortMode { ALPHABETICAL, SIGNAL_STRENGTH }
+    private var currentSortMode = SortMode.ALPHABETICAL
+    
     // Scan view components
     private var scanView: View? = null
     private var scanResultAdapter: ScanResultAdapter? = null
@@ -212,12 +216,17 @@ class MainActivity : AppCompatActivity() {
         val recyclerView = databaseView?.findViewById<RecyclerView>(R.id.networksRecyclerView)
         val exportButton = databaseView?.findViewById<Button>(R.id.exportButton)
         val clearButton = databaseView?.findViewById<Button>(R.id.clearButton)
+        val sortButton = databaseView?.findViewById<Button>(R.id.sortButton)
+        val sortIndicator = databaseView?.findViewById<TextView>(R.id.sortIndicator)
         
         detailedNetworkAdapter = DetailedNetworkAdapter(filteredNetworks) { networkEntry ->
             showNetworkDetailsDialog(networkEntry)
         }
         recyclerView?.layoutManager = LinearLayoutManager(this)
         recyclerView?.adapter = detailedNetworkAdapter
+        
+        // Update sort button text and indicator
+        updateSortButtonDisplay(sortButton, sortIndicator)
         
         searchEdit?.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -227,12 +236,56 @@ class MainActivity : AppCompatActivity() {
             }
         })
         
+        sortButton?.setOnClickListener {
+            toggleSortMode()
+            updateSortButtonDisplay(sortButton, sortIndicator)
+            filterNetworks(searchEdit?.text.toString())
+        }
+        
         exportButton?.setOnClickListener {
             exportDatabase()
         }
         
         clearButton?.setOnClickListener {
             clearDatabase()
+        }
+    }
+
+    private fun toggleSortMode() {
+        currentSortMode = when (currentSortMode) {
+            SortMode.ALPHABETICAL -> SortMode.SIGNAL_STRENGTH
+            SortMode.SIGNAL_STRENGTH -> SortMode.ALPHABETICAL
+        }
+    }
+
+    private fun updateSortButtonDisplay(sortButton: Button?, sortIndicator: TextView?) {
+        when (currentSortMode) {
+            SortMode.ALPHABETICAL -> {
+                sortButton?.text = "ABC"
+                sortIndicator?.text = "🔤"
+                sortIndicator?.visibility = View.VISIBLE
+            }
+            SortMode.SIGNAL_STRENGTH -> {
+                sortButton?.text = "SIG"
+                sortIndicator?.text = "📶"
+                sortIndicator?.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun sortNetworks(networks: MutableList<NetworkDatabase.NetworkEntry>) {
+        when (currentSortMode) {
+            SortMode.ALPHABETICAL -> {
+                networks.sortBy { 
+                    if (it.ssid.isEmpty()) "zzz_${it.bssid}" else it.ssid.lowercase()
+                }
+            }
+            SortMode.SIGNAL_STRENGTH -> {
+                networks.sortByDescending { entry ->
+                    // Get the strongest signal from history (most recent or highest level)
+                    entry.signalHistory.maxOfOrNull { it.level } ?: -100
+                }
+            }
         }
     }
 
@@ -265,6 +318,9 @@ class MainActivity : AppCompatActivity() {
                 network.bssid.lowercase().contains(searchQuery)
             })
         }
+        
+        // Apply sorting to filtered results
+        sortNetworks(filteredNetworks)
         
         detailedNetworkAdapter?.notifyDataSetChanged()
     }

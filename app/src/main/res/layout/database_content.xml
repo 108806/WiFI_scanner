@@ -48,16 +48,56 @@
 
     </LinearLayout>
 
-    <!-- Stats -->
-    <TextView
-        android:id="@+id/statsText"
+    <!-- Stats and Sort controls in one row -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Networks: 0 | Total Scans: 0"
-        android:textColor="@color/text_secondary"
-        android:textSize="13sp"
-        android:fontFamily="monospace"
-        android:padding="8dp" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/statsText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Networks: 0 | Total Scans: 0"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:fontFamily="monospace" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sort:"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/sortButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ABC"
+            android:textColor="@color/text_primary"
+            android:backgroundTint="@color/accent_color"
+            android:textSize="10sp"
+            android:minWidth="45dp"
+            android:minHeight="28dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp" />
+
+        <TextView
+            android:id="@+id/sortIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="�"
+            android:textSize="14sp"
+            android:layout_marginStart="4dp" />
+
+    </LinearLayout>
 
     <!-- Network list -->
     <androidx.recyclerview.widget.RecyclerView
