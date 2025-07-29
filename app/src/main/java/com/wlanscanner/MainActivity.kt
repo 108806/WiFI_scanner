@@ -24,10 +24,18 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
+import com.google.android.gms.maps.model.MarkerOptions
 import com.wlanscanner.data.NetworkDatabase
 import com.wlanscanner.data.WifiNetwork
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var bottomNav: BottomNavigationView
     private lateinit var scanButton: Button
@@ -60,6 +68,11 @@ class MainActivity : AppCompatActivity() {
     private var scanView: View? = null
     private var scanResultAdapter: ScanResultAdapter? = null
     private var currentScanResults = mutableListOf<WifiNetwork>()
+
+    // Map view components
+    private var mapView: View? = null
+    private var googleMap: GoogleMap? = null
+    private var mapFragment: SupportMapFragment? = null
 
     // Permission request launcher
     private val requestPermissionLauncher = registerForActivityResult(
@@ -292,8 +305,141 @@ class MainActivity : AppCompatActivity() {
     private fun showMapTab() {
         scanButton.visibility = View.GONE
         contentFrame.removeAllViews()
-        contentFrame.addView(contentText)
-        contentText.text = "MAP Tab\nComing Soon..."
+        
+        if (mapView == null) {
+            mapView = LayoutInflater.from(this).inflate(R.layout.map_content, contentFrame, false)
+            setupMapView()
+        }
+        
+        contentFrame.addView(mapView)
+        
+        // Initialize map if not already done
+        if (mapFragment == null) {
+            mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as? SupportMapFragment
+            mapFragment?.getMapAsync(this)
+        }
+        
+        refreshMapView()
+    }
+
+    private fun setupMapView() {
+        val refreshMapButton = mapView?.findViewById<Button>(R.id.refreshMapButton)
+        val centerMapButton = mapView?.findViewById<Button>(R.id.centerMapButton)
+        
+        refreshMapButton?.setOnClickListener {
+            refreshMapView()
+        }
+        
+        centerMapButton?.setOnClickListener {
+            centerMapOnNetworks()
+        }
+    }
+
+    override fun onMapReady(map: GoogleMap) {
+        googleMap = map
+        
+        // Configure map settings
+        googleMap?.apply {
+            uiSettings.isZoomControlsEnabled = true
+            uiSettings.isCompassEnabled = true
+            uiSettings.isMyLocationButtonEnabled = true
+            
+            // Try to enable My Location layer if permission is granted
+            if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION) 
+                == PackageManager.PERMISSION_GRANTED) {
+                isMyLocationEnabled = true
+            }
+        }
+        
+        // Load networks on map
+        loadNetworksOnMap()
+    }
+
+    private fun refreshMapView() {
+        loadNetworksOnMap()
+        updateMapStats()
+    }
+
+    private fun loadNetworksOnMap() {
+        googleMap?.let { map ->
+            // Clear existing markers
+            map.clear()
+            
+            val networkEntries = networkDatabase.getAllNetworkEntries()
+            var networksWithLocation = 0
+            
+            networkEntries.forEach { entry ->
+                val lastLocation = entry.locations.lastOrNull()
+                if (lastLocation != null && lastLocation.latitude != 0.0 && lastLocation.longitude != 0.0) {
+                    val position = LatLng(lastLocation.latitude, lastLocation.longitude)
+                    
+                    // Determine marker color based on signal strength
+                    val latestSignal = entry.signalHistory.maxByOrNull { it.level }?.level ?: -100
+                    val markerColor = when {
+                        latestSignal > -50 -> BitmapDescriptorFactory.HUE_GREEN   // Strong signal
+                        latestSignal > -70 -> BitmapDescriptorFactory.HUE_YELLOW  // Medium signal  
+                        else -> BitmapDescriptorFactory.HUE_RED                   // Weak signal
+                    }
+                    
+                    // Create marker with network info
+                    val markerTitle = if (entry.ssid.isEmpty()) "Hidden Network" else entry.ssid
+                    val markerSnippet = "Signal: ${latestSignal}dBm | Scans: ${entry.scanCount} | ${entry.address ?: "No address"}"
+                    
+                    map.addMarker(
+                        MarkerOptions()
+                            .position(position)
+                            .title(markerTitle)
+                            .snippet(markerSnippet)
+                            .icon(BitmapDescriptorFactory.defaultMarker(markerColor))
+                    )
+                    
+                    networksWithLocation++
+                }
+            }
+            
+            Log.d("MainActivity", "Loaded $networksWithLocation networks with GPS coordinates on map")
+        }
+    }
+
+    private fun centerMapOnNetworks() {
+        googleMap?.let { map ->
+            val networkEntries = networkDatabase.getAllNetworkEntries()
+            val locations = mutableListOf<LatLng>()
+            
+            networkEntries.forEach { entry ->
+                val lastLocation = entry.locations.lastOrNull()
+                if (lastLocation != null && lastLocation.latitude != 0.0 && lastLocation.longitude != 0.0) {
+                    locations.add(LatLng(lastLocation.latitude, lastLocation.longitude))
+                }
+            }
+            
+            if (locations.isNotEmpty()) {
+                if (locations.size == 1) {
+                    // Single location - center and zoom
+                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(locations[0], 15f))
+                } else {
+                    // Multiple locations - fit all in view
+                    val boundsBuilder = LatLngBounds.Builder()
+                    locations.forEach { boundsBuilder.include(it) }
+                    val bounds = boundsBuilder.build()
+                    val padding = 100 // padding in pixels
+                    map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, padding))
+                }
+            } else {
+                Toast.makeText(this, "No networks with GPS coordinates found", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun updateMapStats() {
+        val mapStatsText = mapView?.findViewById<TextView>(R.id.mapStatsText)
+        val networkEntries = networkDatabase.getAllNetworkEntries()
+        val networksWithLocation = networkEntries.count { entry ->
+            val lastLocation = entry.locations.lastOrNull()
+            lastLocation != null && lastLocation.latitude != 0.0 && lastLocation.longitude != 0.0
+        }
+        
+        mapStatsText?.text = "Networks on map: $networksWithLocation"
     }
 
     private fun refreshDatabaseView() {
