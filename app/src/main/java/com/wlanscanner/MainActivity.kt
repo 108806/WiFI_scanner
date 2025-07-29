@@ -345,10 +345,12 @@ class MainActivity : AppCompatActivity() {
             mapController.setZoom(12.0)
             val startPoint = GeoPoint(52.2297, 21.0122) // Warsaw coordinates
             mapController.setCenter(startPoint)
+            
+            // Add a small delay to ensure map is fully initialized before loading markers
+            post {
+                loadNetworksOnMap()
+            }
         }
-        
-        // Load networks on map
-        loadNetworksOnMap()
     }
 
     private fun refreshMapView() {
@@ -358,6 +360,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadNetworksOnMap() {
         osmMapView?.let { map ->
+            // Check if map is properly initialized
+            if (map.repository == null) {
+                Log.w("MainActivity", "Map not yet fully initialized, skipping marker loading")
+                return
+            }
+            
             // Clear existing markers
             map.overlays.clear()
             
@@ -369,25 +377,29 @@ class MainActivity : AppCompatActivity() {
                 if (lastLocation != null && lastLocation.latitude != 0.0 && lastLocation.longitude != 0.0) {
                     val position = GeoPoint(lastLocation.latitude, lastLocation.longitude)
                     
-                    // Create marker with network info
-                    val marker = Marker(map)
-                    marker.position = position
-                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    
-                    val markerTitle = if (entry.ssid.isEmpty()) "Hidden Network" else entry.ssid
-                    val latestSignal = entry.signalHistory.maxByOrNull { it.level }?.level ?: -100
-                    marker.title = markerTitle
-                    marker.snippet = "Signal: ${latestSignal}dBm | Scans: ${entry.scanCount} | ${entry.address ?: "No address"}"
-                    
-                    // Set marker icon based on signal strength
-                    when {
-                        latestSignal > -50 -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_online)
-                        latestSignal > -70 -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_away)
-                        else -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_busy)
+                    try {
+                        // Create marker with network info
+                        val marker = Marker(map)
+                        marker.position = position
+                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        
+                        val markerTitle = if (entry.ssid.isEmpty()) "Hidden Network" else entry.ssid
+                        val latestSignal = entry.signalHistory.maxByOrNull { it.level }?.level ?: -100
+                        marker.title = markerTitle
+                        marker.snippet = "Signal: ${latestSignal}dBm | Scans: ${entry.scanCount} | ${entry.address ?: "No address"}"
+                        
+                        // Set marker icon based on signal strength
+                        when {
+                            latestSignal > -50 -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_online)
+                            latestSignal > -70 -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_away)
+                            else -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_busy)
+                        }
+                        
+                        map.overlays.add(marker)
+                        networksWithLocation++
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error creating marker for network ${entry.ssid}: ${e.message}")
                     }
-                    
-                    map.overlays.add(marker)
-                    networksWithLocation++
                 }
             }
             
