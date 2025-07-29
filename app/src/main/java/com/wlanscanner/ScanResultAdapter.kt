@@ -17,6 +17,7 @@ class ScanResultAdapter(
         val bssidText: TextView = itemView.findViewById(R.id.bssidText)
         val signalText: TextView = itemView.findViewById(R.id.signalText)
         val frequencyText: TextView = itemView.findViewById(R.id.frequencyText)
+        val frequencyChannelText: TextView = itemView.findViewById(R.id.frequencyChannelText)
         val securityText: TextView = itemView.findViewById(R.id.securityText)
         val anomaliesText: TextView = itemView.findViewById(R.id.anomaliesText)
     }
@@ -43,9 +44,13 @@ class ScanResultAdapter(
         // Display signal strength
         holder.signalText.text = "${network.level} dBm"
         
-        // Display frequency band
+        // Display frequency band in top line
         val band = if (network.frequency > 5000) "5GHz" else "2.4GHz"
         holder.frequencyText.text = band
+        
+        // Display detailed frequency and channel in BSSID line
+        val channel = network.getChannel()
+        holder.frequencyChannelText.text = "${network.frequency}MHz (Ch${channel})"
         
         // Display security type
         holder.securityText.text = network.getSecurityType()

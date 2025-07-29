@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Network Header -->
+        <TextView
+            android:id="@+id/dialogSsidText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Network SSID"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Basic Info -->
+        <TextView
+            android:id="@+id/dialogBssidText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="BSSID: aa:bb:cc:dd:ee:ff"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/dialogFrequencyText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Frequency: 2437 MHz (Channel 6)"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/dialogSecurityText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Security: WPA2-PSK"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/dialogSignalText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Signal: -45 dBm (85%)"
+            android:textColor="@color/accent_color"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/text_hint"
+            android:layout_marginVertical="8dp" />
+
+        <!-- Statistics -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Statistics"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/dialogScanCountText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Scan Count: 15"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/dialogFirstSeenText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="First Seen: 2025-07-26 14:30:15"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/dialogLastSeenText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Last Seen: 2 minutes ago"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Location -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Location Data"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/dialogLocationText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Coordinates: 52.229700, 21.012200"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Anomalies -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Security Anomalies"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/dialogAnomaliesText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="None detected"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Signal History (simplified) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Signal History"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/dialogSignalHistoryText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Min: -67 dBm, Max: -42 dBm, Avg: -54 dBm"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:fontFamily="monospace" />
+
+    </LinearLayout>
+
+</ScrollView>

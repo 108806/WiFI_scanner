@@ -3,10 +3,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingLeft="16dp"
-    android:paddingRight="16dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp"
+    android:paddingLeft="8dp"
+    android:paddingRight="8dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp"
     android:background="@color/background_dark">
 
     <!-- Main network info row -->
@@ -50,7 +50,7 @@
 
     </LinearLayout>
 
-    <!-- BSSID and Security row -->
+    <!-- BSSID, Frequency and Channel row -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -66,6 +66,16 @@
             android:textColor="@color/text_secondary"
             android:textSize="12sp"
             android:fontFamily="monospace" />
+
+        <TextView
+            android:id="@+id/frequencyChannelText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2437MHz (Ch6)"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:layout_marginStart="8dp" />
 
         <TextView
             android:id="@+id/securityText"

@@ -9,6 +9,8 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -16,6 +18,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -37,6 +40,11 @@ class MainActivity : AppCompatActivity() {
     
     private var isScanning = false
     private var currentTab = "scan"
+    
+    // Continuous scanning
+    private val scanHandler = Handler(Looper.getMainLooper())
+    private var scanRunnable: Runnable? = null
+    private val SCAN_INTERVAL_MS = 5000L // 5 seconds
     
     // Database view components
     private var databaseView: View? = null
@@ -205,7 +213,9 @@ class MainActivity : AppCompatActivity() {
         val exportButton = databaseView?.findViewById<Button>(R.id.exportButton)
         val clearButton = databaseView?.findViewById<Button>(R.id.clearButton)
         
-        detailedNetworkAdapter = DetailedNetworkAdapter(filteredNetworks)
+        detailedNetworkAdapter = DetailedNetworkAdapter(filteredNetworks) { networkEntry ->
+            showNetworkDetailsDialog(networkEntry)
+        }
         recyclerView?.layoutManager = LinearLayoutManager(this)
         recyclerView?.adapter = detailedNetworkAdapter
         
@@ -287,6 +297,9 @@ class MainActivity : AppCompatActivity() {
     private fun startScan() {
         Log.d("MainActivity", "startScan() called")
         
+        // Request fresh location before scanning
+        requestFreshLocation()
+        
         if (!hasLocationPermission() || !hasWifiPermissions()) {
             Log.d("MainActivity", "Missing permissions - Location: ${hasLocationPermission()}, WiFi: ${hasWifiPermissions()}")
             requestRequiredPermissions()
@@ -300,26 +313,66 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
+        // Check if location services are enabled
+        val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        
+        if (!isGpsEnabled && !isNetworkEnabled) {
+            Log.d("MainActivity", "Location services are disabled")
+            Toast.makeText(this, "Please enable Location Services for accurate GPS coordinates", Toast.LENGTH_LONG).show()
+            // Continue scanning even without GPS, but warn user
+        } else {
+            Log.d("MainActivity", "Location services status - GPS: $isGpsEnabled, Network: $isNetworkEnabled")
+        }
+        
         isScanning = true
         updateScanButtonText()
         
         // Register receiver
         registerReceiver(wifiScanReceiver, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
         
-        // Start scan
-        val scanStarted = wifiManager.startScan()
-        Log.d("MainActivity", "Scan started: $scanStarted")
+        // Start continuous scanning
+        startContinuousScanning()
         
         if (currentTab == "scan") {
             updateScanStatus()
         }
         
-        Toast.makeText(this, "WiFi scan started", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Continuous WiFi scanning started", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun startContinuousScanning() {
+        // Create runnable for continuous scanning
+        scanRunnable = object : Runnable {
+            override fun run() {
+                if (isScanning) {
+                    Log.d("MainActivity", "Performing automatic scan")
+                    val scanStarted = wifiManager.startScan()
+                    Log.d("MainActivity", "Auto scan started: $scanStarted")
+                    
+                    // Schedule next scan
+                    scanHandler.postDelayed(this, SCAN_INTERVAL_MS)
+                }
+            }
+        }
+        
+        // Start first scan immediately
+        val firstScanStarted = wifiManager.startScan()
+        Log.d("MainActivity", "Initial scan started: $firstScanStarted")
+        
+        // Schedule continuous scanning
+        scanRunnable?.let { 
+            scanHandler.postDelayed(it, SCAN_INTERVAL_MS)
+        }
     }
 
     private fun stopScan() {
         isScanning = false
         updateScanButtonText()
+        
+        // Stop continuous scanning
+        scanRunnable?.let { scanHandler.removeCallbacks(it) }
+        scanRunnable = null
         
         try {
             unregisterReceiver(wifiScanReceiver)
@@ -331,7 +384,7 @@ class MainActivity : AppCompatActivity() {
             updateScanStatus()
         }
         
-        Toast.makeText(this, "WiFi scan stopped", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Continuous WiFi scanning stopped", Toast.LENGTH_SHORT).show()
     }
 
     private fun updateScanButtonText() {
@@ -366,7 +419,8 @@ class MainActivity : AppCompatActivity() {
                 level = scanResult.level,
                 timestamp = System.currentTimeMillis(),
                 latitude = location?.first ?: 0.0,
-                longitude = location?.second ?: 0.0
+                longitude = location?.second ?: 0.0,
+                address = "" // Address will be geocoded when added to database
             )
             
             currentScanResults.add(wifiNetwork)
@@ -390,9 +444,66 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getCurrentLocation(): Pair<Double, Double>? {
-        // Simple mock location for now
-        // In production, you'd use LocationManager or FusedLocationProvider
-        return Pair(52.2297, 21.0122) // Warsaw coordinates as example
+        return try {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
+                == PackageManager.PERMISSION_GRANTED) {
+                
+                // Try GPS first
+                val gpsLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                if (gpsLocation != null && 
+                    (System.currentTimeMillis() - gpsLocation.time) < 300000) { // 5 minutes old
+                    Log.d("MainActivity", "Using GPS location: ${gpsLocation.latitude}, ${gpsLocation.longitude}, accuracy: ${gpsLocation.accuracy}m")
+                    return Pair(gpsLocation.latitude, gpsLocation.longitude)
+                }
+                
+                // Fallback to network location
+                val networkLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                if (networkLocation != null && 
+                    (System.currentTimeMillis() - networkLocation.time) < 600000) { // 10 minutes old
+                    Log.d("MainActivity", "Using network location: ${networkLocation.latitude}, ${networkLocation.longitude}, accuracy: ${networkLocation.accuracy}m")
+                    return Pair(networkLocation.latitude, networkLocation.longitude)
+                }
+                
+                Log.w("MainActivity", "No recent location available")
+                null
+            } else {
+                Log.w("MainActivity", "Location permission not granted")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to get current location", e)
+            null
+        }
+    }
+
+    private fun requestFreshLocation() {
+        try {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
+                == PackageManager.PERMISSION_GRANTED) {
+                
+                Log.d("MainActivity", "Requesting fresh GPS location...")
+                
+                // Request single location update
+                locationManager.requestSingleUpdate(
+                    LocationManager.GPS_PROVIDER,
+                    { location ->
+                        Log.d("MainActivity", "Fresh GPS location received: ${location.latitude}, ${location.longitude}, accuracy: ${location.accuracy}m")
+                    },
+                    mainLooper
+                )
+                
+                // Also request network location as backup
+                locationManager.requestSingleUpdate(
+                    LocationManager.NETWORK_PROVIDER,
+                    { location ->
+                        Log.d("MainActivity", "Fresh network location received: ${location.latitude}, ${location.longitude}, accuracy: ${location.accuracy}m")
+                    },
+                    mainLooper
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to request fresh location", e)
+        }
     }
 
     private fun requestRequiredPermissions() {
@@ -430,9 +541,123 @@ class MainActivity : AppCompatActivity() {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    private fun showNetworkDetailsDialog(networkEntry: NetworkDatabase.NetworkEntry) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_network_details, null)
+        
+        // Populate dialog fields
+        val ssidText = dialogView.findViewById<TextView>(R.id.dialogSsidText)
+        val bssidText = dialogView.findViewById<TextView>(R.id.dialogBssidText)
+        val frequencyText = dialogView.findViewById<TextView>(R.id.dialogFrequencyText)
+        val securityText = dialogView.findViewById<TextView>(R.id.dialogSecurityText)
+        val signalText = dialogView.findViewById<TextView>(R.id.dialogSignalText)
+        val scanCountText = dialogView.findViewById<TextView>(R.id.dialogScanCountText)
+        val firstSeenText = dialogView.findViewById<TextView>(R.id.dialogFirstSeenText)
+        val lastSeenText = dialogView.findViewById<TextView>(R.id.dialogLastSeenText)
+        val locationText = dialogView.findViewById<TextView>(R.id.dialogLocationText)
+        val anomaliesText = dialogView.findViewById<TextView>(R.id.dialogAnomaliesText)
+        val signalHistoryText = dialogView.findViewById<TextView>(R.id.dialogSignalHistoryText)
+        
+        ssidText.text = if (networkEntry.ssid.isNotEmpty()) networkEntry.ssid else "Hidden Network"
+        bssidText.text = "BSSID: ${networkEntry.bssid}"
+        
+        // Get latest signal reading for frequency and level
+        val latestSignal = networkEntry.signalHistory.maxByOrNull { it.timestamp }
+        if (latestSignal != null) {
+            val channel = when {
+                latestSignal.frequency >= 2412 && latestSignal.frequency <= 2484 -> {
+                    // 2.4 GHz band
+                    if (latestSignal.frequency == 2484) 14 else (latestSignal.frequency - 2412) / 5 + 1
+                }
+                latestSignal.frequency >= 5170 && latestSignal.frequency <= 5825 -> {
+                    // 5 GHz band
+                    (latestSignal.frequency - 5000) / 5
+                }
+                latestSignal.frequency >= 5955 && latestSignal.frequency <= 7115 -> {
+                    // 6 GHz band  
+                    (latestSignal.frequency - 5950) / 5
+                }
+                else -> 0 // Unknown
+            }
+            frequencyText.text = "Frequency: ${latestSignal.frequency} MHz (Channel $channel)"
+            
+            val signalPercentage = when {
+                latestSignal.level >= -30 -> 100
+                latestSignal.level >= -40 -> 90
+                latestSignal.level >= -50 -> 80
+                latestSignal.level >= -60 -> 70
+                latestSignal.level >= -70 -> 60
+                latestSignal.level >= -80 -> 50
+                latestSignal.level >= -90 -> 30
+                else -> 10
+            }
+            signalText.text = "Signal: ${latestSignal.level} dBm (${signalPercentage}%)"
+        } else {
+            frequencyText.text = "Frequency: Unknown"
+            signalText.text = "Signal: Unknown"
+        }
+        
+        securityText.text = "Security: ${networkEntry.securityTypes.joinToString(", ")}"
+        
+        scanCountText.text = "Scan Count: ${networkEntry.scanCount}"
+        
+        val firstSeenFormatted = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+            .format(java.util.Date(networkEntry.firstSeen))
+        firstSeenText.text = "First Seen: $firstSeenFormatted"
+        
+        val timeDiff = System.currentTimeMillis() - networkEntry.lastSeen
+        val timeAgo = when {
+            timeDiff < 60000 -> "${timeDiff / 1000}s ago"
+            timeDiff < 3600000 -> "${timeDiff / 60000}m ago"
+            else -> "${timeDiff / 3600000}h ago"
+        }
+        lastSeenText.text = "Last Seen: $timeAgo"
+        
+        // Get latest location and address
+        val latestLocation = networkEntry.locations.maxByOrNull { it.timestamp }
+        if (latestLocation != null && latestLocation.latitude != 0.0 && latestLocation.longitude != 0.0) {
+            val coordinatesText = "Coordinates: ${String.format("%.6f", latestLocation.latitude)}, ${String.format("%.6f", latestLocation.longitude)}"
+            val addressText = if (!networkEntry.address.isNullOrEmpty()) {
+                "\nAddress: ${networkEntry.address}"
+            } else {
+                "\nAddress: Not available"
+            }
+            locationText.text = coordinatesText + addressText
+        } else {
+            locationText.text = "Location: Not available"
+        }
+        
+        if (networkEntry.anomalies.isNotEmpty()) {
+            anomaliesText.text = networkEntry.anomalies.joinToString(", ")
+            anomaliesText.setTextColor(ContextCompat.getColor(this, R.color.warning_color))
+        } else {
+            anomaliesText.text = "None detected"
+        }
+        
+        // Calculate signal statistics
+        val signalLevels = networkEntry.signalHistory.map { it.level }
+        if (signalLevels.isNotEmpty()) {
+            val min = signalLevels.minOrNull() ?: 0
+            val max = signalLevels.maxOrNull() ?: 0
+            val avg = signalLevels.average().toInt()
+            signalHistoryText.text = "Min: ${min} dBm, Max: ${max} dBm, Avg: ${avg} dBm"
+        } else {
+            signalHistoryText.text = "No signal history available"
+        }
+        
+        AlertDialog.Builder(this)
+            .setTitle("Network Details")
+            .setView(dialogView)
+            .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
+            .show()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (isScanning) {
+            // Stop continuous scanning
+            scanRunnable?.let { scanHandler.removeCallbacks(it) }
+            scanRunnable = null
+            
             try {
                 unregisterReceiver(wifiScanReceiver)
             } catch (e: Exception) {

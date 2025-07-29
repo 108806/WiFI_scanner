@@ -10,17 +10,15 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class DetailedNetworkAdapter(
-    private val networks: MutableList<NetworkDatabase.NetworkEntry>
+    private val networks: MutableList<NetworkDatabase.NetworkEntry>,
+    private val onNetworkClick: (NetworkDatabase.NetworkEntry) -> Unit = {}
 ) : RecyclerView.Adapter<DetailedNetworkAdapter.DetailedNetworkViewHolder>() {
 
     class DetailedNetworkViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val ssidText: TextView = itemView.findViewById(R.id.ssidText)
-        val bssidText: TextView = itemView.findViewById(R.id.bssidText)
-        val signalText: TextView = itemView.findViewById(R.id.signalText)
-        val frequencyText: TextView = itemView.findViewById(R.id.frequencyText)
-        val securityText: TextView = itemView.findViewById(R.id.securityText)
         val scanCountText: TextView = itemView.findViewById(R.id.scanCountText)
-        val lastSeenText: TextView = itemView.findViewById(R.id.lastSeenText)
+        val signalText: TextView = itemView.findViewById(R.id.signalText)
+        val technicalDetailsText: TextView = itemView.findViewById(R.id.technicalDetailsText)
         val anomaliesText: TextView = itemView.findViewById(R.id.anomaliesText)
     }
 
@@ -40,9 +38,6 @@ class DetailedNetworkAdapter(
             "Hidden Network"
         }
         
-        // Display BSSID
-        holder.bssidText.text = "BSSID: ${network.bssid}"
-        
         // Display scan count
         holder.scanCountText.text = "${network.scanCount}x"
         
@@ -51,20 +46,29 @@ class DetailedNetworkAdapter(
         if (latestSignal != null) {
             holder.signalText.text = "${latestSignal.level} dBm"
             
-            // Display frequency with channel
-            val channel = getChannelFromFrequency(latestSignal.frequency)
-            holder.frequencyText.text = "${latestSignal.frequency} MHz (Ch.$channel)"
+            // Create compressed technical details line
+            val tempNetwork = com.wlanscanner.data.WifiNetwork(
+                ssid = network.ssid,
+                bssid = network.bssid,
+                capabilities = "",
+                frequency = latestSignal.frequency,
+                level = latestSignal.level,
+                timestamp = latestSignal.timestamp,
+                latitude = network.locations.lastOrNull()?.latitude ?: 0.0,
+                longitude = network.locations.lastOrNull()?.longitude ?: 0.0,
+                address = network.address ?: ""
+            )
+            val channel = tempNetwork.getChannel()
+            val security = network.securityTypes.joinToString(",")
+            val lastSeenTime = System.currentTimeMillis() - network.lastSeen
+            val timeAgo = formatTimeAgo(lastSeenTime)
+            
+            // Format: BSSID | frequency channel | security | time ago
+            holder.technicalDetailsText.text = "${network.bssid} | ${latestSignal.frequency}MHz Ch${channel} | ${security} | ${timeAgo}"
         } else {
             holder.signalText.text = "N/A"
-            holder.frequencyText.text = "N/A"
+            holder.technicalDetailsText.text = "${network.bssid} | No signal data"
         }
-        
-        // Display security types
-        holder.securityText.text = network.securityTypes.joinToString(", ")
-        
-        // Display last seen time
-        val lastSeenTime = System.currentTimeMillis() - network.lastSeen
-        holder.lastSeenText.text = formatTimeAgo(lastSeenTime)
         
         // Display anomalies count
         val anomaliesCount = network.anomalies.size
@@ -77,18 +81,14 @@ class DetailedNetworkAdapter(
         } else {
             holder.anomaliesText.visibility = View.GONE
         }
+        
+        // Set click listener to show detailed info
+        holder.itemView.setOnClickListener {
+            onNetworkClick(network)
+        }
     }
 
     override fun getItemCount(): Int = networks.size
-    
-    private fun getChannelFromFrequency(frequency: Int): Int {
-        return when {
-            frequency < 2484 -> (frequency - 2412) / 5 + 1
-            frequency == 2484 -> 14
-            frequency in 5000..5999 -> (frequency - 5000) / 5
-            else -> 0
-        }
-    }
     
     private fun formatTimeAgo(millisAgo: Long): String {
         val seconds = millisAgo / 1000

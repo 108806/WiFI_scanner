@@ -3,10 +3,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingLeft="16dp"
-    android:paddingRight="16dp"
-    android:paddingTop="10dp"
-    android:paddingBottom="10dp"
+    android:paddingLeft="8dp"
+    android:paddingRight="8dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp"
     android:background="@color/background_dark">
 
     <!-- Main network info row -->
@@ -50,56 +50,18 @@
 
     </LinearLayout>
 
-    <!-- BSSID row -->
+    <!-- Compressed technical details in one line -->
     <TextView
-        android:id="@+id/bssidText"
+        android:id="@+id/technicalDetailsText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="BSSID: 00:11:22:33:44:55"
+        android:text="aa:bb:cc:dd:ee:ff | 2437MHz Ch6 | WPA2 | 2m ago"
         android:textColor="@color/text_secondary"
-        android:textSize="12sp"
+        android:textSize="11sp"
         android:fontFamily="monospace"
-        android:layout_marginTop="4dp" />
-
-    <!-- Technical details row -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="4dp">
-
-        <TextView
-            android:id="@+id/frequencyText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="2412 MHz (Ch.1)"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp"
-            android:fontFamily="monospace" />
-
-        <TextView
-            android:id="@+id/securityText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="WPA2-PSK"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp"
-            android:layout_marginStart="8dp" />
-
-        <TextView
-            android:id="@+id/lastSeenText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="2m ago"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp"
-            android:fontFamily="monospace"
-            android:layout_marginStart="8dp" />
-
-    </LinearLayout>
+        android:layout_marginTop="4dp"
+        android:maxLines="1"
+        android:ellipsize="end" />
 
     <!-- Anomalies row (if any) -->
     <TextView
