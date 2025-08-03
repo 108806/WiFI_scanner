@@ -50,12 +50,12 @@
 
     </LinearLayout>
 
-    <!-- BSSID, Frequency and Channel row -->
+    <!-- BSSID, Frequency and Security row -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="4dp">
+        android:layout_marginTop="2dp">
 
         <TextView
             android:id="@+id/bssidText"
@@ -64,7 +64,7 @@
             android:layout_weight="1"
             android:text="00:11:22:33:44:55"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:fontFamily="monospace" />
 
         <TextView
@@ -73,7 +73,7 @@
             android:layout_height="wrap_content"
             android:text="2437MHz (Ch6)"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:fontFamily="monospace"
             android:layout_marginStart="8dp" />
 
@@ -81,9 +81,39 @@
             android:id="@+id/securityText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="WPA2"
+            android:text="(WPA2)"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:layout_marginStart="8dp" />
+
+    </LinearLayout>
+
+    <!-- Vendor and Time row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="2dp">
+
+        <TextView
+            android:id="@+id/vendorText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Unknown"
+            android:textColor="@color/accent_color"
+            android:textSize="11sp"
+            android:background="@drawable/rounded_background"
+            android:padding="2dp" />
+
+        <TextView
+            android:id="@+id/timeText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="12:34"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
             android:layout_marginStart="8dp" />
 
         <TextView

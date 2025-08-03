@@ -75,6 +75,22 @@
             app:layout_constraintEnd_toStartOf="@id/ivAnomalyIndicator"
             tools:text="AA:BB:CC:DD:EE:FF" />
 
+        <!-- Vendor Info -->
+        <TextView
+            android:id="@+id/tvVendor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:background="@drawable/rounded_background"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="2dp"
+            android:text="Unknown"
+            android:textSize="10sp"
+            android:textColor="@color/accent_color"
+            app:layout_constraintTop_toBottomOf="@id/tvBSSID"
+            app:layout_constraintStart_toEndOf="@id/ivNetworkIcon"
+            tools:text="ASUS" />
+
         <!-- Anomaly Indicator -->
         <ImageView
             android:id="@+id/ivAnomalyIndicator"

@@ -38,7 +38,8 @@ class NetworkDatabase private constructor(private val context: Context) {
         var scanCount: Int,
         val signalHistory: MutableList<SignalReading>,
         val locations: MutableList<LocationReading>,
-        val securityTypes: MutableSet<String>,
+        var securityType: String,
+        var vendor: String = "Unknown", // Vendor from MAC OUI lookup
         var anomalies: MutableList<String> = mutableListOf(),
         var address: String? = "" // Geocoded address for display - mutable, nullable for backward compatibility
     )
@@ -110,12 +111,12 @@ class NetworkDatabase private constructor(private val context: Context) {
                     // Only create ONE WifiNetwork per entry using the LATEST signal reading
                     val latestSignal = entry.signalHistory.maxByOrNull { it.timestamp }
                     if (latestSignal != null) {
-                        // Reconstruct capabilities from security types
-                        val capabilities = when {
-                            "WPA3" in entry.securityTypes -> "[WPA3-PSK-CCMP][RSN-PSK-CCMP][ESS]"
-                            "WPA2" in entry.securityTypes -> "[WPA2-PSK-CCMP][RSN-PSK-CCMP][ESS]"
-                            "WPA" in entry.securityTypes -> "[WPA-PSK-CCMP][ESS]"
-                            "WEP" in entry.securityTypes -> "[WEP][ESS]"
+                        // Reconstruct capabilities from security type
+                        val capabilities = when (entry.securityType) {
+                            "WPA3" -> "[WPA3-PSK-CCMP][RSN-PSK-CCMP][ESS]"
+                            "WPA2" -> "[WPA2-PSK-CCMP][RSN-PSK-CCMP][ESS]"
+                            "WPA" -> "[WPA-PSK-CCMP][ESS]"
+                            "WEP" -> "[WEP][ESS]"
                             else -> "[ESS]" // Open network
                         }
                         
@@ -264,7 +265,8 @@ class NetworkDatabase private constructor(private val context: Context) {
             scanCount = 1,
             signalHistory = mutableListOf(SignalReading(network.timestamp, network.level, network.frequency)),
             locations = mutableListOf(),
-            securityTypes = mutableSetOf(network.getSecurityType()),
+            securityType = network.getSecurityType(),
+            vendor = network.vendor,
             anomalies = network.anomalies.toMutableList(),
             address = address
         )
@@ -401,11 +403,11 @@ class NetworkDatabase private constructor(private val context: Context) {
         networkEntries.values.forEach { entry ->
             val latestSignal = entry.signalHistory.maxByOrNull { it.timestamp }
             if (latestSignal != null) {
-                val capabilities = when {
-                    "WPA3" in entry.securityTypes -> "[WPA3-PSK-CCMP][RSN-PSK-CCMP][ESS]"
-                    "WPA2" in entry.securityTypes -> "[WPA2-PSK-CCMP][RSN-PSK-CCMP][ESS]"
-                    "WPA" in entry.securityTypes -> "[WPA-PSK-CCMP][ESS]"
-                    "WEP" in entry.securityTypes -> "[WEP][ESS]"
+                val capabilities = when (entry.securityType) {
+                    "WPA3" -> "[WPA3-PSK-CCMP][RSN-PSK-CCMP][ESS]"
+                    "WPA2" -> "[WPA2-PSK-CCMP][RSN-PSK-CCMP][ESS]"
+                    "WPA" -> "[WPA-PSK-CCMP][ESS]"
+                    "WEP" -> "[WEP][ESS]"
                     else -> "[ESS]"
                 }
                 
@@ -454,9 +456,7 @@ class NetworkDatabase private constructor(private val context: Context) {
                     "uniqueNetworks" to networkEntries.size
                 ),
                 "statistics" to getNetworkStats(),
-                "networks" to networkEntries,  // Export as hashmap with keys
-                "rawNetworkList" to networks,   // Keep raw list for debugging
-                "networkEntries" to networkEntries.values
+                "networks" to networkEntries  // Only export the main hashmap
             )
             
             val jsonString = gson.toJson(exportData)

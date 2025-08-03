@@ -1,10 +1,13 @@
 package com.wlanscanner
 
+import android.content.Context
+import android.util.Log
+
 /**
  * Vendor lookup based on MAC address OUI (Organizationally Unique Identifier)
  * First 3 bytes of MAC address identify the manufacturer
  */
-class VendorLookup {
+class VendorLookup(private val context: Context? = null) {
     
     data class VendorInfo(
         val name: String,
@@ -42,49 +45,129 @@ class VendorLookup {
     )
 
     init {
+        println("VendorLookup: === CONSTRUCTOR CALLED ===")
+        println("VendorLookup: Initializing with context: $context")
+        Log.d("VendorLookup", "=== CONSTRUCTOR CALLED ===")
+        Log.d("VendorLookup", "Initializing VendorLookup with context: $context")
         loadOuiDatabase()
+        Log.d("VendorLookup", "=== CONSTRUCTOR FINISHED ===")
+        println("VendorLookup: === CONSTRUCTOR FINISHED ===")
     }
 
     private fun loadOuiDatabase() {
+        Log.d("VendorLookup", "=== loadOuiDatabase() called ===")
         // Only load once per session
-        if (ouiVendorMap.isNotEmpty()) return
+        if (ouiVendorMap.isNotEmpty()) {
+            Log.d("VendorLookup", "OUI database already loaded, skipping. Size: ${ouiVendorMap.size}")
+            return
+        }
+        
+        if (context == null) {
+            println("VendorLookup: No context provided, cannot load OUI database")
+            Log.e("VendorLookup", "No context provided, cannot load OUI database")
+            return
+        }
+        
+        Log.d("VendorLookup", "Loading OUI database from assets...")
         try {
-            val file = java.io.File("oui.txt")
-            if (!file.exists()) return
-            file.forEachLine { line ->
-                // Example line: "28-6F-B9   (hex)\t\tNokia Shanghai Bell Co., Ltd."
-                val regex = Regex("([0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2})\\s+\\(hex\\)\\s+(.+)")
-                val match = regex.find(line)
-                if (match != null) {
-                    val oui = match.groupValues[1].replace("-", ":").uppercase()
-                    val vendorName = match.groupValues[2].trim()
-                    ouiVendorMap[oui] = VendorInfo(
-                        name = vendorName,
-                        fullName = vendorName,
-                        country = "",
-                        isCommon = false,
-                        securityRisk = SecurityRisk.LOW
-                    )
+            Log.d("VendorLookup", "Opening assets file: oui.txt")
+            val inputStream = context.assets.open("oui.txt")
+            Log.d("VendorLookup", "Successfully opened oui.txt file")
+            
+            var lineCount = 0
+            var matchCount = 0
+            inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    lineCount++
+                    if (lineCount <= 10) {
+                        Log.d("VendorLookup", "Processing line $lineCount: $line")
+                    }
+                    // Try multiple patterns for OUI lines
+                    // Pattern 1: "28-6F-B9   (hex)		Nokia Shanghai Bell Co., Ltd."
+                    val regex1 = Regex("([0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2})\\s+\\(hex\\)\\s+(.+)")
+                    // Pattern 2: "286FB9     (base 16)		Nokia Shanghai Bell Co., Ltd."
+                    val regex2 = Regex("([0-9A-F]{6})\\s+\\(base 16\\)\\s+(.+)")
+                    
+                    var match = regex1.find(line)
+                    var oui: String? = null
+                    var vendorName: String? = null
+                    
+                    if (match != null) {
+                        oui = match.groupValues[1].replace("-", ":").uppercase()
+                        vendorName = match.groupValues[2].trim()
+                    } else {
+                        match = regex2.find(line)
+                        if (match != null) {
+                            val rawOui = match.groupValues[1]
+                            oui = "${rawOui.substring(0,2)}:${rawOui.substring(2,4)}:${rawOui.substring(4,6)}"
+                            vendorName = match.groupValues[2].trim()
+                        }
+                    }
+                    
+                    if (oui != null && vendorName != null) {
+                        matchCount++
+                        if (matchCount <= 5) {
+                            Log.d("VendorLookup", "Match $matchCount: OUI=$oui, Vendor=$vendorName")
+                        }
+                        ouiVendorMap[oui] = VendorInfo(
+                            name = vendorName,
+                            fullName = vendorName,
+                            country = "",
+                            isCommon = false,
+                            securityRisk = SecurityRisk.LOW
+                        )
+                    }
                 }
             }
+            Log.d("VendorLookup", "Processed $lineCount lines total, found $matchCount OUI entries")
+            Log.d("VendorLookup", "Final OUI database size: ${ouiVendorMap.size}")
+            println("VendorLookup: Loaded ${ouiVendorMap.size} OUI entries from assets")
+            Log.d("VendorLookup", "Loaded ${ouiVendorMap.size} OUI entries from assets")
         } catch (e: Exception) {
-            println("Failed to load OUI database: ${e.message}")
+            println("VendorLookup: Failed to load OUI database from assets: ${e.message}")
+            Log.e("VendorLookup", "Failed to load OUI database from assets: ${e.message}", e)
         }
     }
     
     fun lookupVendor(macAddress: String): VendorInfo {
+        // Force reload if database is empty
+        if (ouiVendorMap.isEmpty()) {
+            Log.d("VendorLookup", "OUI database is empty, forcing reload...")
+            loadOuiDatabase()
+        }
+        
         val cleanMac = macAddress.replace(":", "").replace("-", "").uppercase()
         if (cleanMac.length < 6) {
+            Log.d("VendorLookup", "Invalid MAC address: $macAddress")
             return VendorInfo("Invalid", "Invalid MAC Address", "", false, SecurityRisk.HIGH)
         }
         val oui = "${cleanMac.substring(0, 2)}:${cleanMac.substring(2, 4)}:${cleanMac.substring(4, 6)}"
+        Log.d("VendorLookup", "Looking up OUI: $oui for MAC: $macAddress, OUI database size: ${ouiVendorMap.size}")
+        
+        // Debug: Print first few OUI entries if database is small
+        if (ouiVendorMap.size < 5) {
+            Log.d("VendorLookup", "OUI database seems empty or very small. Size: ${ouiVendorMap.size}")
+            ouiVendorMap.entries.take(5).forEach { (key, value) ->
+                Log.d("VendorLookup", "Sample OUI: $key -> ${value.name}")
+            }
+        }
+        
         // Try OUI database first
         val ouiVendor = ouiVendorMap[oui]
-        if (ouiVendor != null) return ouiVendor
+        if (ouiVendor != null) {
+            Log.d("VendorLookup", "Found in OUI database: ${ouiVendor.name}")
+            return ouiVendor
+        }
+        
         // Fallback to local risky vendor database
         val localVendor = localVendorDatabase[oui]
-        if (localVendor != null) return localVendor
+        if (localVendor != null) {
+            Log.d("VendorLookup", "Found in local database: ${localVendor.name}")
+            return localVendor
+        }
+        
         // Unknown vendor
+        Log.d("VendorLookup", "Unknown vendor for OUI: $oui, OUI database size: ${ouiVendorMap.size}")
         return VendorInfo(
             "Unknown",
             "Unknown Vendor (OUI: $oui)",

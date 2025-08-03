@@ -51,6 +51,15 @@
             android:layout_marginBottom="4dp" />
 
         <TextView
+            android:id="@+id/dialogVendorText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Vendor: Unknown"
+            android:textColor="@color/accent_color"
+            android:textSize="14sp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
             android:id="@+id/dialogSignalText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

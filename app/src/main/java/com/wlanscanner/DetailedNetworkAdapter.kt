@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.wlanscanner.data.NetworkDatabase
 import java.text.SimpleDateFormat
 import java.util.*
+import android.util.Log
 
 class DetailedNetworkAdapter(
     private val networks: MutableList<NetworkDatabase.NetworkEntry>,
@@ -30,6 +31,7 @@ class DetailedNetworkAdapter(
 
     override fun onBindViewHolder(holder: DetailedNetworkViewHolder, position: Int) {
         val network = networks[position]
+        Log.d("DetailedNetworkAdapter", "Binding detailed network at position $position: ${network.bssid} - ${network.ssid}")
         
         // Display SSID (or "Hidden Network" if empty)
         holder.ssidText.text = if (network.ssid.isNotEmpty()) {
@@ -59,15 +61,22 @@ class DetailedNetworkAdapter(
                 address = network.address ?: ""
             )
             val channel = tempNetwork.getChannel()
-            val security = network.securityTypes.joinToString(",")
+            val security = network.securityType
             val lastSeenTime = System.currentTimeMillis() - network.lastSeen
             val timeAgo = formatTimeAgo(lastSeenTime)
             
-            // Format: BSSID | frequency channel | security | time ago
-            holder.technicalDetailsText.text = "${network.bssid} | ${latestSignal.frequency}MHz Ch${channel} | ${security} | ${timeAgo}"
+            // Use stored vendor information from database
+            Log.d("DetailedNetworkAdapter", "Database detailed - BSSID: ${network.bssid}, Vendor: ${network.vendor}")
+            
+            // Format: BSSID | vendor | frequency channel | security | time ago
+            holder.technicalDetailsText.text = "${network.bssid} | ${network.vendor} | ${latestSignal.frequency}MHz Ch${channel} | ${security} | ${timeAgo}"
         } else {
             holder.signalText.text = "N/A"
-            holder.technicalDetailsText.text = "${network.bssid} | No signal data"
+            
+            // Use stored vendor even without signal data
+            Log.d("DetailedNetworkAdapter", "Database detailed (no signal) - BSSID: ${network.bssid}, Vendor: ${network.vendor}")
+            
+            holder.technicalDetailsText.text = "${network.bssid} | ${network.vendor} | No signal data"
         }
         
         // Display anomalies count

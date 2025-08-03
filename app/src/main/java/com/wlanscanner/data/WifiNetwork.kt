@@ -12,6 +12,7 @@ data class WifiNetwork(
     val altitude: Double = 0.0,
     val accuracy: Float = 0.0f,
     val address: String = "", // Reverse geocoded address
+    val vendor: String = "Unknown", // Vendor from MAC OUI lookup
     val anomalies: MutableList<String> = mutableListOf()
 ) {
     // Convert signal level to quality percentage

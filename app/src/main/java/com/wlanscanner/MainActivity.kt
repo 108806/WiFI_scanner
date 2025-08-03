@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
     private var osmMapView: MapView? = null
     
     // Security components
-    private val vendorLookup = VendorLookup()
+    private val vendorLookup = VendorLookup(this)
     private val securityDetector = SecurityAnomalyDetector(vendorLookup)
     private var securityView: View? = null
     
@@ -569,26 +569,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshDatabaseView() {
-        allNetworks.clear()
-        allNetworks.addAll(networkDatabase.getAllNetworkEntries())
-        filterNetworks("")
-        
+        // Show loading state
         val statsText = databaseView?.findViewById<TextView>(R.id.statsText)
-        val stats = networkDatabase.getNetworkStats()
-        statsText?.text = "Networks: ${stats["totalNetworks"]} | Total Scans: ${allNetworks.sumOf { it.scanCount }}"
+        statsText?.text = "Loading database..."
+        
+        // Move heavy operations to background thread
+        Thread {
+            val networkEntries = networkDatabase.getAllNetworkEntries()
+            val stats = networkDatabase.getNetworkStats()
+            
+            // Switch back to UI thread for updates
+            runOnUiThread {
+                allNetworks.clear()
+                allNetworks.addAll(networkEntries)
+                filterNetworks("")
+                
+                statsText?.text = "Networks: ${stats["totalNetworks"]} | Total Scans: ${allNetworks.sumOf { it.scanCount }}"
+            }
+        }.start()
     }
 
     private fun filterNetworks(query: String) {
-        filteredNetworks.clear()
-        
+        // Only create new list if actually filtering
         if (query.isEmpty()) {
-            filteredNetworks.addAll(allNetworks)
+            // Direct reference for better performance
+            if (filteredNetworks !== allNetworks) {
+                filteredNetworks.clear()
+                filteredNetworks.addAll(allNetworks)
+            }
         } else {
             val searchQuery = query.lowercase()
-            filteredNetworks.addAll(allNetworks.filter { network ->
+            val newFiltered = allNetworks.filter { network ->
                 network.ssid.lowercase().contains(searchQuery) ||
                 network.bssid.lowercase().contains(searchQuery)
-            })
+            }
+            
+            filteredNetworks.clear()
+            filteredNetworks.addAll(newFiltered)
         }
         
         // Apply sorting to filtered results
@@ -757,12 +774,19 @@ class MainActivity : AppCompatActivity() {
         val vendorStatsText = securityView?.findViewById<TextView>(R.id.vendorStats)
         
         val vendorCounts = networks.groupingBy { network ->
-            vendorLookup.lookupVendor(network.bssid).name
+            network.vendor
         }.eachCount()
         
-        val riskCounts = networks.groupingBy { network ->
-            vendorLookup.lookupVendor(network.bssid).securityRisk
-        }.eachCount()
+        // For risk counts, we'll map stored vendor names to risk levels
+        val riskCounts = mutableMapOf<VendorLookup.SecurityRisk, Int>()
+        networks.forEach { network ->
+            val risk = when {
+                network.vendor.contains("ESP", ignoreCase = true) -> VendorLookup.SecurityRisk.MEDIUM
+                network.vendor == "Unknown" -> VendorLookup.SecurityRisk.UNKNOWN
+                else -> VendorLookup.SecurityRisk.LOW
+            }
+            riskCounts[risk] = (riskCounts[risk] ?: 0) + 1
+        }
         
         val statsText = buildString {
             append("Total Networks: ${networks.size}\n")
@@ -899,6 +923,10 @@ class MainActivity : AppCompatActivity() {
         scanResults.forEach { scanResult ->
             Log.d("MainActivity", "Processing network: SSID='${scanResult.SSID}', BSSID='${scanResult.BSSID}', Level=${scanResult.level}")
             
+            // Look up vendor information during scanning
+            val vendorInfo = vendorLookup.lookupVendor(scanResult.BSSID)
+            Log.d("MainActivity", "Vendor lookup for ${scanResult.BSSID}: ${vendorInfo.name}")
+            
             val wifiNetwork = WifiNetwork(
                 ssid = scanResult.SSID ?: "[Hidden Network]",
                 bssid = scanResult.BSSID,
@@ -908,7 +936,8 @@ class MainActivity : AppCompatActivity() {
                 timestamp = System.currentTimeMillis(),
                 latitude = location?.first ?: 0.0,
                 longitude = location?.second ?: 0.0,
-                address = "" // Address will be geocoded when added to database
+                address = "", // Address will be geocoded when added to database
+                vendor = vendorInfo.name
             )
             
             currentScanResults.add(wifiNetwork)
@@ -1064,9 +1093,10 @@ class MainActivity : AppCompatActivity() {
     private fun showNetworkDetailsDialog(networkEntry: NetworkDatabase.NetworkEntry) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_network_details, null)
         
-        // Populate dialog fields
+        // Get all UI components
         val ssidText = dialogView.findViewById<TextView>(R.id.dialogSsidText)
         val bssidText = dialogView.findViewById<TextView>(R.id.dialogBssidText)
+        val vendorText = dialogView.findViewById<TextView>(R.id.dialogVendorText)
         val frequencyText = dialogView.findViewById<TextView>(R.id.dialogFrequencyText)
         val securityText = dialogView.findViewById<TextView>(R.id.dialogSecurityText)
         val signalText = dialogView.findViewById<TextView>(R.id.dialogSignalText)
@@ -1077,93 +1107,67 @@ class MainActivity : AppCompatActivity() {
         val anomaliesText = dialogView.findViewById<TextView>(R.id.dialogAnomaliesText)
         val signalHistoryText = dialogView.findViewById<TextView>(R.id.dialogSignalHistoryText)
         
+        // Basic network information from JSON
         ssidText.text = if (networkEntry.ssid.isNotEmpty()) networkEntry.ssid else "Hidden Network"
-        bssidText.text = "BSSID: ${networkEntry.bssid}"
+        bssidText.text = networkEntry.bssid
+        vendorText.text = networkEntry.vendor // Read directly from stored JSON data
+        securityText.text = networkEntry.securityType
+        scanCountText.text = "Scanned ${networkEntry.scanCount} times"
         
-        // Get latest signal reading for frequency and level
-        val latestSignal = networkEntry.signalHistory.maxByOrNull { it.timestamp }
+        // Date formatting
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        firstSeenText.text = "First seen: ${dateFormat.format(java.util.Date(networkEntry.firstSeen))}"
+        lastSeenText.text = "Last seen: ${dateFormat.format(java.util.Date(networkEntry.lastSeen))}"
+        
+        // Signal information from the latest reading
+        val latestSignal = networkEntry.signalHistory.lastOrNull()
         if (latestSignal != null) {
             val channel = when {
-                latestSignal.frequency >= 2412 && latestSignal.frequency <= 2484 -> {
-                    // 2.4 GHz band
+                latestSignal.frequency >= 2412 && latestSignal.frequency <= 2484 -> 
                     if (latestSignal.frequency == 2484) 14 else (latestSignal.frequency - 2412) / 5 + 1
-                }
-                latestSignal.frequency >= 5170 && latestSignal.frequency <= 5825 -> {
-                    // 5 GHz band
+                latestSignal.frequency >= 5170 && latestSignal.frequency <= 5825 -> 
                     (latestSignal.frequency - 5000) / 5
-                }
-                latestSignal.frequency >= 5955 && latestSignal.frequency <= 7115 -> {
-                    // 6 GHz band  
-                    (latestSignal.frequency - 5950) / 5
-                }
-                else -> 0 // Unknown
+                else -> 0
             }
-            frequencyText.text = "Frequency: ${latestSignal.frequency} MHz (Channel $channel)"
             
-            val signalPercentage = when {
-                latestSignal.level >= -30 -> 100
-                latestSignal.level >= -40 -> 90
-                latestSignal.level >= -50 -> 80
-                latestSignal.level >= -60 -> 70
-                latestSignal.level >= -70 -> 60
-                latestSignal.level >= -80 -> 50
-                latestSignal.level >= -90 -> 30
-                else -> 10
-            }
-            signalText.text = "Signal: ${latestSignal.level} dBm (${signalPercentage}%)"
+            frequencyText.text = "${latestSignal.frequency} MHz (Channel $channel)"
+            signalText.text = "${latestSignal.level} dBm"
+            
+            // Signal history statistics
+            val signals = networkEntry.signalHistory.map { it.level }
+            val minSignal = signals.minOrNull() ?: 0
+            val maxSignal = signals.maxOrNull() ?: 0
+            val avgSignal = if (signals.isNotEmpty()) signals.average().toInt() else 0
+            signalHistoryText.text = "Signal range: $minSignal to $maxSignal dBm (avg: $avgSignal dBm)"
         } else {
-            frequencyText.text = "Frequency: Unknown"
-            signalText.text = "Signal: Unknown"
+            frequencyText.text = "Unknown frequency"
+            signalText.text = "No signal data"
+            signalHistoryText.text = "No signal history"
         }
         
-        securityText.text = "Security: ${networkEntry.securityTypes.joinToString(", ")}"
-        
-        scanCountText.text = "Scan Count: ${networkEntry.scanCount}"
-        
-        val firstSeenFormatted = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-            .format(java.util.Date(networkEntry.firstSeen))
-        firstSeenText.text = "First Seen: $firstSeenFormatted"
-        
-        val timeDiff = System.currentTimeMillis() - networkEntry.lastSeen
-        val timeAgo = when {
-            timeDiff < 60000 -> "${timeDiff / 1000}s ago"
-            timeDiff < 3600000 -> "${timeDiff / 60000}m ago"
-            else -> "${timeDiff / 3600000}h ago"
-        }
-        lastSeenText.text = "Last Seen: $timeAgo"
-        
-        // Get latest location and address
-        val latestLocation = networkEntry.locations.maxByOrNull { it.timestamp }
+        // Location information
+        val latestLocation = networkEntry.locations.lastOrNull()
         if (latestLocation != null && latestLocation.latitude != 0.0 && latestLocation.longitude != 0.0) {
-            val coordinatesText = "Coordinates: ${String.format("%.6f", latestLocation.latitude)}, ${String.format("%.6f", latestLocation.longitude)}"
-            val addressText = if (!networkEntry.address.isNullOrEmpty()) {
-                "\nAddress: ${networkEntry.address}"
+            val coords = "%.6f, %.6f".format(latestLocation.latitude, latestLocation.longitude)
+            locationText.text = if (!networkEntry.address.isNullOrEmpty()) {
+                "$coords\n${networkEntry.address}"
             } else {
-                "\nAddress: Not available"
+                coords
             }
-            locationText.text = coordinatesText + addressText
         } else {
-            locationText.text = "Location: Not available"
+            locationText.text = "No location data"
         }
         
+        // Anomalies
         if (networkEntry.anomalies.isNotEmpty()) {
             anomaliesText.text = networkEntry.anomalies.joinToString(", ")
-            anomaliesText.setTextColor(ContextCompat.getColor(this, R.color.warning_color))
+            anomaliesText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_light))
         } else {
-            anomaliesText.text = "None detected"
+            anomaliesText.text = "No anomalies detected"
+            anomaliesText.setTextColor(ContextCompat.getColor(this, android.R.color.primary_text_light))
         }
         
-        // Calculate signal statistics
-        val signalLevels = networkEntry.signalHistory.map { it.level }
-        if (signalLevels.isNotEmpty()) {
-            val min = signalLevels.minOrNull() ?: 0
-            val max = signalLevels.maxOrNull() ?: 0
-            val avg = signalLevels.average().toInt()
-            signalHistoryText.text = "Min: ${min} dBm, Max: ${max} dBm, Avg: ${avg} dBm"
-        } else {
-            signalHistoryText.text = "No signal history available"
-        }
-        
+        // Show the dialog
         AlertDialog.Builder(this)
             .setTitle("Network Details")
             .setView(dialogView)

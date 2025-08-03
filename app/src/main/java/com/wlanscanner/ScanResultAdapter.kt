@@ -20,6 +20,7 @@ class ScanResultAdapter(
         val frequencyChannelText: TextView = itemView.findViewById(R.id.frequencyChannelText)
         val securityText: TextView = itemView.findViewById(R.id.securityText)
         val anomaliesText: TextView = itemView.findViewById(R.id.anomaliesText)
+        val vendorText: TextView = itemView.findViewById(R.id.vendorText)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ScanResultViewHolder {
@@ -30,6 +31,7 @@ class ScanResultAdapter(
 
     override fun onBindViewHolder(holder: ScanResultViewHolder, position: Int) {
         val network = scanResults[position]
+        Log.d("ScanResultAdapter", "Binding live scan at position $position: ${network.bssid}")
         
         // Display SSID (or "Hidden Network" if empty)
         holder.ssidText.text = if (network.ssid.isNotEmpty()) {
@@ -54,6 +56,10 @@ class ScanResultAdapter(
         
         // Display security type
         holder.securityText.text = network.getSecurityType()
+        
+        // Display vendor information from stored data
+        Log.d("ScanResultAdapter", "Live scan - BSSID: ${network.bssid}, Vendor: ${network.vendor}")
+        holder.vendorText.text = network.vendor
         
         // Hide anomalies for live scan (not calculated yet)
         holder.anomaliesText.visibility = View.GONE

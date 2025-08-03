@@ -23,6 +23,7 @@ class DatabaseNetworkAdapter(
         val frequencyText: TextView = itemView.findViewById(R.id.tvLocationInfo) // Using location field for frequency
         val locationText: TextView = itemView.findViewById(R.id.tvLocationInfo)
         val timestampText: TextView = itemView.findViewById(R.id.tvTimestamp)
+        val vendorText: TextView = itemView.findViewById(R.id.tvVendor)
     }
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): DatabaseNetworkViewHolder {
@@ -42,6 +43,11 @@ class DatabaseNetworkAdapter(
         
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         holder.timestampText.text = dateFormat.format(Date(network.timestamp))
+        
+        // Display vendor information
+        val vendorLookup = com.wlanscanner.VendorLookup(holder.itemView.context)
+        val vendorInfo = vendorLookup.lookupVendor(network.bssid)
+        holder.vendorText.text = vendorInfo.name
         
         // Set signal strength color
         val signalColor = when {

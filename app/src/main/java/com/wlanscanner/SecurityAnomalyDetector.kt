@@ -367,7 +367,7 @@ class SecurityAnomalyDetector(
         val anomalies = mutableListOf<SecurityAnomaly>()
         
         val openNetworks = networks.filter { network -> 
-            network.securityTypes.any { secType -> secType.contains("Open", ignoreCase = true) }
+            network.securityType.contains("Open", ignoreCase = true)
         }
         val suspiciousOpenNetworks = openNetworks.filter { network ->
             // Check for suspicious patterns in open networks
