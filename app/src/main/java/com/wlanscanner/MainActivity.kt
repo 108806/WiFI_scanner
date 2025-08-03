@@ -1185,15 +1185,19 @@ class MainActivity : AppCompatActivity() {
             signalHistoryText.text = "No signal history"
         }
         
-        // Location information
+        // Location information with clickable functionality
         val latestLocation = networkEntry.locations.lastOrNull()
         if (latestLocation != null && latestLocation.latitude != 0.0 && latestLocation.longitude != 0.0) {
             val coords = "%.6f, %.6f".format(latestLocation.latitude, latestLocation.longitude)
             locationText.text = if (!networkEntry.address.isNullOrEmpty()) {
-                "$coords\n${networkEntry.address}"
+                "$coords\n${networkEntry.address}\n\n🗺️ Tap to view on map"
             } else {
-                coords
+                "$coords\n\n🗺️ Tap to view on map"
             }
+            
+            // Make it look clickable
+            locationText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_blue_light))
+            locationText.setPaintFlags(locationText.paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG)
         } else {
             locationText.text = "No location data"
         }
@@ -1208,11 +1212,52 @@ class MainActivity : AppCompatActivity() {
         }
         
         // Show the dialog
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Network Details")
             .setView(dialogView)
             .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
-            .show()
+            .create()
+        
+        // Update location click listener to close dialog first
+        val latestLocation = networkEntry.locations.lastOrNull()
+        if (latestLocation != null && latestLocation.latitude != 0.0 && latestLocation.longitude != 0.0) {
+            locationText.setOnClickListener {
+                dialog.dismiss() // Close dialog first
+                jumpToMapLocation(latestLocation.latitude, latestLocation.longitude, networkEntry.ssid)
+            }
+        }
+        
+        dialog.show()
+    }
+    
+    /**
+     * Jump to map tab and center on specific location
+     */
+    private fun jumpToMapLocation(latitude: Double, longitude: Double, networkName: String) {
+        Log.d("MainActivity", "Jumping to map location: $latitude, $longitude for network: $networkName")
+        
+        // Switch to map tab
+        currentTab = "map"
+        bottomNav.selectedItemId = R.id.navigation_map
+        showMapTab()
+        
+        // Center map on the specified location
+        osmMapView?.let { mapView ->
+            val targetLocation = GeoPoint(latitude, longitude)
+            val mapController = mapView.controller
+            
+            // Set zoom level and center on location
+            mapController.setZoom(18.0) // High zoom for precise location
+            mapController.setCenter(targetLocation)
+            
+            Log.d("MainActivity", "Map centered on $latitude, $longitude with zoom 18")
+            
+            // Show a toast with network name
+            Toast.makeText(this, "Showing location of: $networkName", Toast.LENGTH_SHORT).show()
+        } ?: run {
+            Log.w("MainActivity", "Map view not initialized, cannot jump to location")
+            Toast.makeText(this, "Map not ready, please try again", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onResume() {
