@@ -1,5 +1,7 @@
 package com.wlanscanner.data
 
+import com.wlanscanner.utils.ChannelMapper
+
 data class WifiNetwork(
     val ssid: String,
     val bssid: String,
@@ -42,32 +44,21 @@ data class WifiNetwork(
         }
     }
     
-    // Get frequency band
+    // Get frequency band with global support
     fun getFrequencyBand(): String {
-        return when {
-            frequency < 3000 -> "2.4 GHz"
-            frequency < 6000 -> "5 GHz"
-            else -> "6 GHz"
-        }
+        val channelInfo = ChannelMapper.getChannelInfo(frequency)
+        return channelInfo.band
     }
     
-    // Get WiFi channel from frequency
+    // Get WiFi channel from frequency using global mapping
     fun getChannel(): Int {
-        return when {
-            frequency >= 2412 && frequency <= 2484 -> {
-                // 2.4 GHz band
-                if (frequency == 2484) 14 else (frequency - 2412) / 5 + 1
-            }
-            frequency >= 5170 && frequency <= 5825 -> {
-                // 5 GHz band
-                (frequency - 5000) / 5
-            }
-            frequency >= 5955 && frequency <= 7115 -> {
-                // 6 GHz band  
-                (frequency - 5950) / 5
-            }
-            else -> 0 // Unknown
-        }
+        val channelInfo = ChannelMapper.getChannelInfo(frequency)
+        return channelInfo.channel
+    }
+    
+    // Get channel info with region details
+    fun getChannelInfo(): ChannelMapper.ChannelInfo {
+        return ChannelMapper.getChannelInfo(frequency)
     }
     
     // Generate unique key for hash map: hex(ssid) + "_" + bssid

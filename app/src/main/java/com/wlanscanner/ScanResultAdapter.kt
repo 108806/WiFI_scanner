@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.wlanscanner.data.WifiNetwork
+import com.wlanscanner.utils.ChannelMapper
 
 class ScanResultAdapter(
     private val scanResults: MutableList<WifiNetwork>
@@ -46,13 +47,17 @@ class ScanResultAdapter(
         // Display signal strength
         holder.signalText.text = "${network.level} dBm"
         
-        // Display frequency band in top line
-        val band = if (network.frequency > 5000) "5GHz" else "2.4GHz"
-        holder.frequencyText.text = band
+        // Use global channel mapper for worldwide support
+        val channelInfo = ChannelMapper.getChannelInfo(network.frequency)
+        holder.frequencyText.text = channelInfo.band
         
-        // Display detailed frequency and channel in BSSID line
-        val channel = network.getChannel()
-        holder.frequencyChannelText.text = "${network.frequency}MHz (Ch${channel})"
+        // Display detailed frequency and channel with region info if applicable
+        val channelDisplay = if (channelInfo.region != "Global") {
+            "${network.frequency}MHz (Ch${channelInfo.channel} - ${channelInfo.region})"
+        } else {
+            "${network.frequency}MHz (Ch${channelInfo.channel})"
+        }
+        holder.frequencyChannelText.text = channelDisplay
         
         // Display security type
         holder.securityText.text = network.getSecurityType()

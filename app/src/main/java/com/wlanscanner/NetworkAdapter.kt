@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.wlanscanner.data.NetworkDatabase
+import com.wlanscanner.utils.ChannelMapper
 import android.util.Log
 
 class NetworkAdapter(
@@ -49,21 +50,17 @@ class NetworkAdapter(
         if (latestSignal != null) {
             holder.signalText.text = "${latestSignal.level} dBm"
             
-            // Display frequency band
-            val band = if (latestSignal.frequency > 5000) "5GHz" else "2.4GHz"
-            holder.frequencyText.text = band
+            // Use global channel mapper for worldwide support
+            val channelInfo = ChannelMapper.getChannelInfo(latestSignal.frequency)
+            holder.frequencyText.text = channelInfo.band
             
-            // Display frequency and channel
-            val channel = when {
-                latestSignal.frequency >= 2412 && latestSignal.frequency <= 2484 -> {
-                    if (latestSignal.frequency == 2484) 14 else (latestSignal.frequency - 2412) / 5 + 1
-                }
-                latestSignal.frequency >= 5170 && latestSignal.frequency <= 5825 -> {
-                    (latestSignal.frequency - 5000) / 5
-                }
-                else -> 0
+            // Display frequency and channel with region info if applicable
+            val channelDisplay = if (channelInfo.region != "Global") {
+                "${latestSignal.frequency}MHz (Ch${channelInfo.channel} - ${channelInfo.region})"
+            } else {
+                "${latestSignal.frequency}MHz (Ch${channelInfo.channel})"
             }
-            holder.frequencyChannelText.text = "${latestSignal.frequency}MHz (Ch$channel)"
+            holder.frequencyChannelText.text = channelDisplay
         } else {
             holder.signalText.text = "N/A"
             holder.frequencyText.text = "N/A"

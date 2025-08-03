@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.wlanscanner.utils.ChannelMapper
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -825,6 +826,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
+        // Log WiFi capabilities for global scanning support
+        logWifiCapabilities()
+        
         // Check if location services are enabled
         val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
         val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
@@ -898,6 +902,33 @@ class MainActivity : AppCompatActivity() {
         
         Toast.makeText(this, "Continuous WiFi scanning stopped", Toast.LENGTH_SHORT).show()
     }
+    
+    private fun logWifiCapabilities() {
+        try {
+            Log.d("MainActivity", "=== WiFi Global Scanning Capabilities ===")
+            Log.d("MainActivity", "WiFi enabled: ${wifiManager.isWifiEnabled}")
+            
+            // Check supported bands on Android 11+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                val is5GHzBandSupported = wifiManager.is5GHzBandSupported
+                val is6GHzBandSupported = wifiManager.is6GHzBandSupported
+                Log.d("MainActivity", "5GHz band supported: $is5GHzBandSupported")
+                Log.d("MainActivity", "6GHz band supported: $is6GHzBandSupported")
+            }
+            
+            // Log all supported bands from our global ChannelMapper
+            val supportedBands = ChannelMapper.getSupportedBands()
+            Log.d("MainActivity", "ChannelMapper supports bands: ${supportedBands.joinToString(", ")}")
+            Log.d("MainActivity", "Global channel mapping includes:")
+            Log.d("MainActivity", "- 2.4GHz: Channels 1-14 (worldwide)")
+            Log.d("MainActivity", "- 5GHz: Channels 34-181 (UNII bands)")
+            Log.d("MainActivity", "- 6GHz: Channels 1-233 (WiFi 6E)")
+            Log.d("MainActivity", "- 60GHz: Channels 1-13 (802.11ad/ay)")
+            Log.d("MainActivity", "=====================================")
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Error checking WiFi capabilities: ${e.message}")
+        }
+    }
 
     private fun updateScanButtonText() {
         scanButton.text = if (isScanning) "Stop Scan" else "Start Scan"
@@ -914,6 +945,10 @@ class MainActivity : AppCompatActivity() {
         val scanResults = wifiManager.scanResults
         Log.d("MainActivity", "Raw scan results count: ${scanResults.size}")
         
+        // Log frequency diversity for debugging global channel support
+        val frequencies = scanResults.map { it.frequency }.distinct().sorted()
+        Log.d("MainActivity", "Detected frequencies: ${frequencies.joinToString(", ")}")
+        
         val location = getCurrentLocation()
         
         // Clear and update current scan results for live display
@@ -926,6 +961,10 @@ class MainActivity : AppCompatActivity() {
             // Look up vendor information during scanning
             val vendorInfo = vendorLookup.lookupVendor(scanResult.BSSID)
             Log.d("MainActivity", "Vendor lookup for ${scanResult.BSSID}: ${vendorInfo.name}")
+            
+            // Log global channel mapping for this frequency
+            val channelInfo = ChannelMapper.getChannelInfo(scanResult.frequency)
+            Log.d("MainActivity", "Frequency ${scanResult.frequency}MHz mapped to Ch${channelInfo.channel} (${channelInfo.band}${if (channelInfo.region != "Global") " - ${channelInfo.region}" else ""})")
             
             val wifiNetwork = WifiNetwork(
                 ssid = scanResult.SSID ?: "[Hidden Network]",
@@ -1122,15 +1161,16 @@ class MainActivity : AppCompatActivity() {
         // Signal information from the latest reading
         val latestSignal = networkEntry.signalHistory.lastOrNull()
         if (latestSignal != null) {
-            val channel = when {
-                latestSignal.frequency >= 2412 && latestSignal.frequency <= 2484 -> 
-                    if (latestSignal.frequency == 2484) 14 else (latestSignal.frequency - 2412) / 5 + 1
-                latestSignal.frequency >= 5170 && latestSignal.frequency <= 5825 -> 
-                    (latestSignal.frequency - 5000) / 5
-                else -> 0
+            // Use global channel mapper for worldwide support
+            val channelInfo = ChannelMapper.getChannelInfo(latestSignal.frequency)
+            
+            val frequencyDisplay = if (channelInfo.region != "Global") {
+                "${latestSignal.frequency} MHz (Ch${channelInfo.channel} - ${channelInfo.region})"
+            } else {
+                "${latestSignal.frequency} MHz (Ch${channelInfo.channel})"
             }
             
-            frequencyText.text = "${latestSignal.frequency} MHz (Channel $channel)"
+            frequencyText.text = frequencyDisplay
             signalText.text = "${latestSignal.level} dBm"
             
             // Signal history statistics
