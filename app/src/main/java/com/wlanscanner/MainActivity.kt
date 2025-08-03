@@ -28,9 +28,12 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import kotlin.math.abs
 import org.osmdroid.views.overlay.Marker
 import com.wlanscanner.data.NetworkDatabase
 import com.wlanscanner.data.WifiNetwork
+import android.location.Location
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -46,10 +49,10 @@ class MainActivity : AppCompatActivity() {
     private var isScanning = false
     private var currentTab = "scan"
     
-    // Continuous scanning
+    // Continuous scanning - OPTIMIZED for mobile scanning
     private val scanHandler = Handler(Looper.getMainLooper())
     private var scanRunnable: Runnable? = null
-    private val SCAN_INTERVAL_MS = 5000L // 5 seconds
+    private val SCAN_INTERVAL_MS = 1500L // 1.5 seconds - aggressive scanning for mobile use
     
     // Database view components
     private var databaseView: View? = null
@@ -69,6 +72,16 @@ class MainActivity : AppCompatActivity() {
     // Map view components
     private var mapView: View? = null
     private var osmMapView: MapView? = null
+    
+    // Security components
+    private val vendorLookup = VendorLookup()
+    private val securityDetector = SecurityAnomalyDetector(vendorLookup)
+    private var securityView: View? = null
+    
+    // GPS optimization - avoid duplicate locations
+    private var lastRecordedLocation: Location? = null
+    private val MIN_DISTANCE_METERS = 5.0f // Only save location if moved > 5m
+    private val MIN_TIME_MS = 3000L // Only save location if > 3 seconds passed
 
     // Permission request launcher
     private val requestPermissionLauncher = registerForActivityResult(
@@ -98,8 +111,25 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main_simple)
         
-        // Initialize osmdroid configuration
-        Configuration.getInstance().load(applicationContext, android.preference.PreferenceManager.getDefaultSharedPreferences(applicationContext))
+        // Initialize osmdroid configuration with CACHE OPTIMIZATION
+        val osmConfig = Configuration.getInstance()
+        osmConfig.load(applicationContext, android.preference.PreferenceManager.getDefaultSharedPreferences(applicationContext))
+        
+        // Configure OSM cache for offline usage
+        val basePath = File(getExternalFilesDir(null), "osmdroid")
+        basePath.mkdirs()
+        osmConfig.osmdroidBasePath = basePath
+        
+        val tileCache = File(basePath, "tiles")
+        tileCache.mkdirs()
+        osmConfig.osmdroidTileCache = tileCache
+        
+        // Set cache size and expiration (30 days, 100MB cache)
+        osmConfig.tileDownloadThreads = 4
+        osmConfig.tileFileSystemCacheMaxBytes = 100L * 1024L * 1024L // 100MB
+        osmConfig.expirationOverrideDuration = 1000L * 60L * 60L * 24L * 30L // 30 days
+        
+        Log.d("MainActivity", "OSM Cache configured: ${tileCache.absolutePath}, max size: 100MB")
         
         initializeComponents()
         setupBottomNavigation()
@@ -144,6 +174,11 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_map -> {
                     currentTab = "map"
                     showMapTab()
+                    true
+                }
+                R.id.navigation_security -> {
+                    currentTab = "security"
+                    showSecurityTab()
                     true
                 }
                 else -> false
@@ -370,41 +405,107 @@ class MainActivity : AppCompatActivity() {
             map.overlays.clear()
             
             val networkEntries = networkDatabase.getAllNetworkEntries()
-            var networksWithLocation = 0
             
-            networkEntries.forEach { entry ->
-                val lastLocation = entry.locations.lastOrNull()
-                if (lastLocation != null && lastLocation.latitude != 0.0 && lastLocation.longitude != 0.0) {
-                    val position = GeoPoint(lastLocation.latitude, lastLocation.longitude)
+            // Group networks by location (with tolerance for GPS precision)
+            val locationGroups = groupNetworksByLocation(networkEntries)
+            var markersCreated = 0
+            var totalNetworksWithLocation = 0
+            
+            locationGroups.forEach { (location, networks) ->
+                totalNetworksWithLocation += networks.size
+                
+                try {
+                    // Create marker for this location group
+                    val marker = Marker(map)
+                    marker.position = location
+                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     
-                    try {
-                        // Create marker with network info
-                        val marker = Marker(map)
-                        marker.position = position
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        
-                        val markerTitle = if (entry.ssid.isEmpty()) "Hidden Network" else entry.ssid
-                        val latestSignal = entry.signalHistory.maxByOrNull { it.level }?.level ?: -100
-                        marker.title = markerTitle
-                        marker.snippet = "Signal: ${latestSignal}dBm | Scans: ${entry.scanCount} | ${entry.address ?: "No address"}"
-                        
-                        // Set marker icon based on signal strength
-                        when {
-                            latestSignal > -50 -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_online)
-                            latestSignal > -70 -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_away)
-                            else -> marker.icon = ContextCompat.getDrawable(this, android.R.drawable.presence_busy)
-                        }
-                        
-                        map.overlays.add(marker)
-                        networksWithLocation++
-                    } catch (e: Exception) {
-                        Log.e("MainActivity", "Error creating marker for network ${entry.ssid}: ${e.message}")
-                    }
+                    // Configure marker based on grouped networks
+                    configureGroupedMarker(marker, networks, map)
+                    
+                    map.overlays.add(marker)
+                    markersCreated++
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error creating marker for location group: ${e.message}")
                 }
             }
             
             map.invalidate() // Refresh the map
-            Log.d("MainActivity", "Loaded $networksWithLocation networks with GPS coordinates on map")
+            Log.d("MainActivity", "Created $markersCreated markers for $totalNetworksWithLocation networks with GPS coordinates")
+        }
+    }
+
+    private fun groupNetworksByLocation(networkEntries: List<NetworkDatabase.NetworkEntry>): Map<GeoPoint, List<NetworkDatabase.NetworkEntry>> {
+        val locationGroups = mutableMapOf<GeoPoint, MutableList<NetworkDatabase.NetworkEntry>>()
+        val tolerance = 0.0001 // ~11 meters tolerance for grouping networks
+        
+        networkEntries.forEach { entry ->
+            val lastLocation = entry.locations.lastOrNull()
+            if (lastLocation != null && lastLocation.latitude != 0.0 && lastLocation.longitude != 0.0) {
+                val entryLocation = GeoPoint(lastLocation.latitude, lastLocation.longitude)
+                
+                // Find existing group within tolerance or create new one
+                val existingGroup = locationGroups.keys.find { existingLocation ->
+                    val latDiff = kotlin.math.abs(existingLocation.latitude - entryLocation.latitude)
+                    val lonDiff = kotlin.math.abs(existingLocation.longitude - entryLocation.longitude)
+                    latDiff < tolerance && lonDiff < tolerance
+                }
+                
+                if (existingGroup != null) {
+                    locationGroups[existingGroup]?.add(entry)
+                } else {
+                    locationGroups[entryLocation] = mutableListOf(entry)
+                }
+            }
+        }
+        
+        return locationGroups
+    }
+
+    private fun configureGroupedMarker(marker: Marker, networks: List<NetworkDatabase.NetworkEntry>, mapView: MapView) {
+        // Sort networks by signal strength (strongest first)
+        val sortedNetworks = networks.sortedByDescending { entry ->
+            entry.signalHistory.maxByOrNull { it.level }?.level ?: -100
+        }
+        
+        val displayCount = minOf(5, sortedNetworks.size)
+        val remainingCount = maxOf(0, sortedNetworks.size - 5)
+        
+        // Set marker title and icon based on strongest signal
+        val strongestNetwork = sortedNetworks.first()
+        val strongestSignal = strongestNetwork.signalHistory.maxByOrNull { it.level }?.level ?: -100
+        
+        // Marker title shows count if multiple networks
+        marker.title = if (networks.size == 1) {
+            val ssid = if (strongestNetwork.ssid.isEmpty()) "Hidden Network" else strongestNetwork.ssid
+            ssid
+        } else {
+            "${networks.size} WiFi Networks"
+        }
+        
+        // Create detailed snippet with up to 5 networks
+        val snippetBuilder = StringBuilder()
+        
+        sortedNetworks.take(5).forEachIndexed { index, entry ->
+            val ssid = if (entry.ssid.isEmpty()) "Hidden Network" else entry.ssid
+            val signal = entry.signalHistory.maxByOrNull { it.level }?.level ?: -100
+            val scanCount = entry.scanCount
+            
+            if (index > 0) snippetBuilder.append("\n")
+            snippetBuilder.append("${index + 1}. $ssid (${signal}dBm, ${scanCount} scans)")
+        }
+        
+        if (remainingCount > 0) {
+            snippetBuilder.append("\n... and $remainingCount more networks")
+        }
+        
+        marker.snippet = snippetBuilder.toString()
+        
+        // Set marker icon based on strongest signal
+        when {
+            strongestSignal > -50 -> marker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.presence_online)
+            strongestSignal > -70 -> marker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.presence_away)
+            else -> marker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.presence_busy)
         }
     }
 
@@ -519,6 +620,166 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "Clear failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    // Security Tab Functions
+    private fun showSecurityTab() {
+        if (securityView == null) {
+            securityView = LayoutInflater.from(this).inflate(R.layout.security_content, contentFrame, false)
+            setupSecurityView()
+        }
+        
+        contentFrame.removeAllViews()
+        contentFrame.addView(securityView)
+        
+        scanButton.visibility = View.GONE
+        
+        // Auto-analyze current networks
+        analyzeNetworkSecurity()
+    }
+    
+    private fun setupSecurityView() {
+        val refreshButton = securityView?.findViewById<Button>(R.id.refreshSecurityButton)
+        refreshButton?.setOnClickListener {
+            analyzeNetworkSecurity()
+        }
+    }
+    
+    private fun analyzeNetworkSecurity() {
+        val allNetworks = networkDatabase.getAllNetworkEntries()
+        
+        if (allNetworks.isEmpty()) {
+            updateSecurityDisplay(
+                SecurityAnomalyDetector.SecurityReport(
+                    anomalies = emptyList(),
+                    riskLevel = SecurityAnomalyDetector.RiskLevel.SAFE,
+                    summary = "No networks to analyze. Perform a WiFi scan first."
+                )
+            )
+            return
+        }
+        
+        // Run security analysis
+        val securityReport = securityDetector.analyzeNetworks(allNetworks)
+        updateSecurityDisplay(securityReport)
+        updateVendorStatistics(allNetworks)
+        
+        Log.d("MainActivity", "Security analysis complete: ${securityReport.anomalies.size} anomalies detected")
+    }
+    
+    private fun updateSecurityDisplay(report: SecurityAnomalyDetector.SecurityReport) {
+        val riskLevelText = securityView?.findViewById<TextView>(R.id.riskLevelText)
+        val summaryText = securityView?.findViewById<TextView>(R.id.securitySummary)
+        val anomaliesContainer = securityView?.findViewById<LinearLayout>(R.id.anomaliesContainer)
+        val noAnomaliesText = securityView?.findViewById<TextView>(R.id.noAnomaliesText)
+        
+        // Update risk level with color coding
+        riskLevelText?.text = report.riskLevel.name
+        riskLevelText?.setTextColor(when (report.riskLevel) {
+            SecurityAnomalyDetector.RiskLevel.SAFE -> ContextCompat.getColor(this, android.R.color.holo_green_light)
+            SecurityAnomalyDetector.RiskLevel.CAUTION -> ContextCompat.getColor(this, android.R.color.holo_orange_light)
+            SecurityAnomalyDetector.RiskLevel.WARNING -> ContextCompat.getColor(this, android.R.color.holo_orange_light)
+            SecurityAnomalyDetector.RiskLevel.DANGER -> ContextCompat.getColor(this, android.R.color.holo_red_light)
+        })
+        
+        // Update summary
+        summaryText?.text = report.summary
+        
+        // Clear previous anomalies
+        anomaliesContainer?.removeAllViews()
+        
+        if (report.anomalies.isEmpty()) {
+            noAnomaliesText?.visibility = View.VISIBLE
+        } else {
+            noAnomaliesText?.visibility = View.GONE
+            
+            // Add each anomaly as a card
+            report.anomalies.forEach { anomaly ->
+                addAnomalyCard(anomaliesContainer, anomaly)
+            }
+        }
+    }
+    
+    private fun addAnomalyCard(container: LinearLayout?, anomaly: SecurityAnomalyDetector.SecurityAnomaly) {
+        container ?: return
+        
+        val cardView = LayoutInflater.from(this).inflate(android.R.layout.simple_list_item_2, container, false)
+        
+        val titleText = cardView.findViewById<TextView>(android.R.id.text1)
+        val descriptionText = cardView.findViewById<TextView>(android.R.id.text2)
+        
+        // Format title with severity and type
+        val severityIcon = when (anomaly.severity) {
+            SecurityAnomalyDetector.Severity.LOW -> "⚪"
+            SecurityAnomalyDetector.Severity.MEDIUM -> "🟡"
+            SecurityAnomalyDetector.Severity.HIGH -> "🟠"
+            SecurityAnomalyDetector.Severity.CRITICAL -> "🔴"
+        }
+        
+        titleText.text = "$severityIcon ${anomaly.severity.name}: ${anomaly.type.name.replace("_", " ")}"
+        titleText.setTextColor(when (anomaly.severity) {
+            SecurityAnomalyDetector.Severity.LOW -> ContextCompat.getColor(this, android.R.color.white)
+            SecurityAnomalyDetector.Severity.MEDIUM -> ContextCompat.getColor(this, android.R.color.holo_orange_light)
+            SecurityAnomalyDetector.Severity.HIGH -> ContextCompat.getColor(this, android.R.color.holo_orange_light)
+            SecurityAnomalyDetector.Severity.CRITICAL -> ContextCompat.getColor(this, android.R.color.holo_red_light)
+        })
+        
+        // Format description
+        val description = buildString {
+            append(anomaly.description)
+            if (anomaly.affectedNetworks.isNotEmpty()) {
+                append("\n\nAffected: ${anomaly.affectedNetworks.take(3).joinToString(", ")}")
+                if (anomaly.affectedNetworks.size > 3) {
+                    append(" and ${anomaly.affectedNetworks.size - 3} more")
+                }
+            }
+            append("\n\nAction: ${anomaly.recommendedAction}")
+        }
+        
+        descriptionText.text = description
+        descriptionText.setTextColor(ContextCompat.getColor(this, android.R.color.white))
+        
+        // Add some padding and margin with DARK background
+        cardView.setPadding(16, 12, 16, 12)
+        val layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        layoutParams.setMargins(0, 0, 0, 8)
+        cardView.layoutParams = layoutParams
+        // Dark background for anomaly cards
+        cardView.setBackgroundColor(ContextCompat.getColor(this, android.R.color.background_dark))
+        
+        container.addView(cardView)
+    }
+    
+    private fun updateVendorStatistics(networks: List<NetworkDatabase.NetworkEntry>) {
+        val vendorStatsText = securityView?.findViewById<TextView>(R.id.vendorStats)
+        
+        val vendorCounts = networks.groupingBy { network ->
+            vendorLookup.lookupVendor(network.bssid).name
+        }.eachCount()
+        
+        val riskCounts = networks.groupingBy { network ->
+            vendorLookup.lookupVendor(network.bssid).securityRisk
+        }.eachCount()
+        
+        val statsText = buildString {
+            append("Total Networks: ${networks.size}\n")
+            append("Unique Vendors: ${vendorCounts.size}\n")
+            append("Risk Distribution: ")
+            append("Safe: ${riskCounts[VendorLookup.SecurityRisk.LOW] ?: 0}, ")
+            append("Medium: ${riskCounts[VendorLookup.SecurityRisk.MEDIUM] ?: 0}, ")
+            append("High: ${riskCounts[VendorLookup.SecurityRisk.HIGH] ?: 0}, ")
+            append("Unknown: ${riskCounts[VendorLookup.SecurityRisk.UNKNOWN] ?: 0}\n")
+            
+            // Top vendors
+            val topVendors = vendorCounts.toList().sortedByDescending { it.second }.take(5)
+            append("Top Vendors: ")
+            append(topVendors.joinToString(", ") { "${it.first} (${it.second})" })
+        }
+        
+        vendorStatsText?.text = statsText
     }
 
     private fun startScan() {
@@ -668,6 +929,11 @@ class MainActivity : AppCompatActivity() {
         if (currentTab == "database") {
             refreshDatabaseView()
         }
+        
+        // If security tab is visible, refresh security analysis
+        if (currentTab == "security") {
+            analyzeNetworkSecurity()
+        }
     }
 
     private fun getCurrentLocation(): Pair<Double, Double>? {
@@ -731,6 +997,33 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e("MainActivity", "Failed to request fresh location", e)
         }
+    }
+    
+    /**
+     * Check if location should be recorded based on distance and time constraints
+     * This prevents excessive GPS logging while maintaining accuracy
+     */
+    private fun shouldRecordLocation(newLocation: Location): Boolean {
+        val lastLocation = lastRecordedLocation
+        val currentTime = System.currentTimeMillis()
+        
+        if (lastLocation == null) {
+            Log.d("MainActivity", "First location recorded")
+            return true
+        }
+        
+        val timeDiff = currentTime - (lastLocation.time)
+        val distance = lastLocation.distanceTo(newLocation)
+        
+        val shouldRecord = timeDiff >= MIN_TIME_MS && distance >= MIN_DISTANCE_METERS
+        
+        if (shouldRecord) {
+            Log.d("MainActivity", "Location recorded: moved ${distance}m in ${timeDiff}ms")
+        } else {
+            Log.v("MainActivity", "Location skipped: moved ${distance}m in ${timeDiff}ms (min: ${MIN_DISTANCE_METERS}m, ${MIN_TIME_MS}ms)")
+        }
+        
+        return shouldRecord
     }
 
     private fun requestRequiredPermissions() {

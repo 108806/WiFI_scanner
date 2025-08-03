@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="@android:color/black">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="16dp">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@android:drawable/ic_lock_idle_lock"
+            android:layout_marginEnd="8dp"
+            android:tint="@android:color/white" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Security Analysis"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/white" />
+
+        <Button
+            android:id="@+id/refreshSecurityButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="Refresh"
+            android:textSize="12sp"
+            android:minHeight="0dp"
+            style="?android:attr/buttonStyleSmall" />
+
+    </LinearLayout>
+
+    <!-- Risk Level Indicator -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="#2D2D2D"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Risk Level: "
+            android:textStyle="bold"
+            android:textColor="@android:color/white" />
+
+        <TextView
+            android:id="@+id/riskLevelText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ANALYZING..."
+            android:textStyle="bold"
+            android:textColor="@android:color/holo_orange_light" />
+
+    </LinearLayout>
+
+    <!-- Summary -->
+    <TextView
+        android:id="@+id/securitySummary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Analyzing network security..."
+        android:textSize="14sp"
+        android:layout_marginBottom="16dp"
+        android:padding="8dp"
+        android:background="#2D2D2D"
+        android:textColor="@android:color/white" />
+
+    <!-- Anomalies List -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Security Anomalies:"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp"
+        android:textColor="@android:color/white" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#1A1A1A">
+
+        <LinearLayout
+            android:id="@+id/anomaliesContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <!-- Anomalies will be added here dynamically -->
+            <TextView
+                android:id="@+id/noAnomaliesText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="✅ No anomalies detected\nClick 'Refresh' to analyze current networks"
+                android:gravity="center"
+                android:textSize="14sp"
+                android:padding="32dp"
+                android:textColor="@android:color/white" />
+
+        </LinearLayout>
+
+    </ScrollView>
+
+    <!-- Vendor Statistics -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="16dp"
+        android:padding="8dp"
+        android:background="#2D2D2D">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Vendor Statistics:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp"
+            android:textColor="@android:color/white" />
+
+        <TextView
+            android:id="@+id/vendorStats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="No data available"
+            android:textSize="12sp"
+            android:textColor="@android:color/white" />
+
+    </LinearLayout>
+
+</LinearLayout>

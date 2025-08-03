@@ -14,4 +14,9 @@
         android:id="@+id/navigation_map"
         android:icon="@drawable/ic_map"
         android:title="MAP" />
+    
+    <item
+        android:id="@+id/navigation_security"
+        android:icon="@android:drawable/ic_lock_idle_lock"
+        android:title="SECURITY" />
 </menu>

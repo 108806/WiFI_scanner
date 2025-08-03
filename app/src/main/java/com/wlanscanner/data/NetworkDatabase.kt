@@ -23,6 +23,10 @@ class NetworkDatabase private constructor(private val context: Context) {
                 INSTANCE ?: NetworkDatabase(context.applicationContext).also { INSTANCE = it }
             }
         }
+        
+        // GPS optimization constants
+        private const val MIN_DISTANCE_METERS = 2.0f // Only save location if moved > 2m (optimized)
+        private const val MIN_TIME_MS = 1000L // Only save location if > 1 second passed (optimized)
     }
     
     // Simple NetworkEntry for displaying in RecyclerView
@@ -176,30 +180,49 @@ class NetworkDatabase private constructor(private val context: Context) {
             
             // Always UPDATE existing entry unless it's a suspected evil twin
             if (!isLikelyEvilTwin) {
-                // Normal case - update the existing network entry
+                // Simple update - just timestamp and counter, NO HISTORY SPAM!
                 existingEntry.lastSeen = network.timestamp
                 existingEntry.scanCount++
-                existingEntry.signalHistory.add(SignalReading(network.timestamp, network.level, network.frequency))
-                existingEntry.securityTypes.add(network.getSecurityType())
                 
-                // Merge anomalies
+                // Only update if signal is significantly different (avoid spam)
+                if (existingEntry.signalHistory.isEmpty() || 
+                    Math.abs(network.level - existingEntry.signalHistory.last().level) > 10) {
+                    existingEntry.signalHistory.add(SignalReading(network.timestamp, network.level, network.frequency))
+                    // Keep only last 5 readings to prevent file explosion
+                    if (existingEntry.signalHistory.size > 5) {
+                        existingEntry.signalHistory.removeAt(0)
+                    }
+                }
+                
+                // Only merge NEW anomalies
                 network.anomalies.forEach { anomaly ->
                     if (anomaly !in existingEntry.anomalies) {
                         existingEntry.anomalies.add(anomaly)
                     }
                 }
                 
+                // Only add location if REALLY moved (prevent location spam)
                 if (network.latitude != 0.0 && network.longitude != 0.0) {
-                    existingEntry.locations.add(LocationReading(network.timestamp, network.latitude, network.longitude, network.accuracy))
+                    if (shouldAddLocation(existingEntry.locations, network.latitude, network.longitude, network.timestamp)) {
+                        existingEntry.locations.add(LocationReading(network.timestamp, network.latitude, network.longitude, network.accuracy))
+                        // Keep only last 10 locations to prevent file explosion
+                        if (existingEntry.locations.size > 10) {
+                            existingEntry.locations.removeAt(0)
+                        }
+                        Log.d("NetworkDatabase", "Added new location for ${network.ssid}: distance significant")
+                    }
                     
-                    // Update address if we don't have one yet
+                    // Update address only once
                     if (existingEntry.address.isNullOrEmpty()) {
                         existingEntry.address = getAddressFromLocation(network.latitude, network.longitude)
                     }
                 }
                 
-                Log.d("NetworkDatabase", "Updated existing network: $key (scanCount: ${existingEntry.scanCount}, distance: ${distance.toInt()}m, timeDiff: ${timeDiff}ms)")
-                saveDatabase()
+                Log.v("NetworkDatabase", "Updated existing network: $key (scanCount: ${existingEntry.scanCount})")
+                // Save database LESS frequently to improve performance
+                if (existingEntry.scanCount % 10 == 0) {
+                    saveDatabase()
+                }
                 return // Exit early - network updated, NOT added to list
             } else {
                 // Suspected evil twin - create duplicate entry
@@ -247,7 +270,9 @@ class NetworkDatabase private constructor(private val context: Context) {
         )
         
         if (network.latitude != 0.0 && network.longitude != 0.0) {
+            // Only add location for new networks (no previous locations to check)
             newEntry.locations.add(LocationReading(network.timestamp, network.latitude, network.longitude, network.accuracy))
+            Log.d("NetworkDatabase", "Added initial location for new network: ${network.ssid}")
         }
         
         networkEntries[key] = newEntry
@@ -446,5 +471,37 @@ class NetworkDatabase private constructor(private val context: Context) {
             Log.e("NetworkDatabase", "Export to Downloads failed", e)
             throw e
         }
+    }
+    
+    /**
+     * Check if location should be added based on distance and time constraints
+     * This prevents excessive GPS logging while maintaining accuracy
+     */
+    private fun shouldAddLocation(existingLocations: List<LocationReading>, newLat: Double, newLon: Double, newTime: Long): Boolean {
+        if (existingLocations.isEmpty()) return true
+        
+        val lastLocation = existingLocations.maxByOrNull { it.timestamp } ?: return true
+        
+        val timeDiff = newTime - lastLocation.timestamp
+        if (timeDiff < MIN_TIME_MS) return false
+        
+        // Calculate distance using Haversine formula
+        val distance = calculateDistance(lastLocation.latitude, lastLocation.longitude, newLat, newLon)
+        
+        return distance >= MIN_DISTANCE_METERS
+    }
+    
+    /**
+     * Calculate distance between two GPS coordinates in meters
+     */
+    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+        val earthRadius = 6371000f // Earth's radius in meters
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return (earthRadius * c).toFloat()
     }
 }
